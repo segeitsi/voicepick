@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>BBDV</string>
+  <key>CFBundleIdentifier</key><string>local.oshi.bbdv</string>
+  <key>CFBundleName</key><string>ББ ДВ</string>
+  <key>CFBundleDisplayName</key><string>ББ / ДВ</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.3.1</string>
+  <key>CFBundleVersion</key><string>17</string>
+  <key>LSMinimumSystemVersion</key><string>15.2</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Микрофон нужен для голосовых оценок и команд лайк/дизлайк.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Распознаём русские числа и команды для управления ботами Telegram. Если локальное распознавание недоступно, звук обрабатывает Apple.</string>
+</dict></plist>

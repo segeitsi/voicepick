@@ -1,0 +1,16 @@
+/build/
+/local/
+/.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.app/
+*.dmg
+reference-bank*.json
+face-debug*.json
+/assets/drawing-references.json
+/assets/face-mesh/face_landmarker.task
+/assets/face-mesh/model.*
+.DS_Store
