@@ -22,11 +22,22 @@ struct DesktopTests {
         check(moved.resolved(calibration, mode: .random)?.isComplete == true, "random starts after moving")
         check(TargetWindow(pid: 1, bundle: "another.app", frame: window).resolved(calibration, mode: .voice) == nil, "resolution rejects other apps")
         let resizedFrame = CGRect(x: 50, y: 60, width: 1100, height: 800)
-        check(calibration.guessedInput(in: resizedFrame) == CGPoint(x: 290, y: 810), "composer hint anchors to bottom/right on resize")
+        check(TargetWindow(pid: 1, bundle: "com.tdesktop.Telegram", frame: resizedFrame).resolved(calibration, mode: .voice) == nil, "voice requires field reselection after resize")
         check(TargetWindow(pid: 1, bundle: "com.tdesktop.Telegram", frame: resizedFrame).resolved(calibration, mode: .random) == nil, "random requires new crop after resize")
         var knownWindow = calibration
         knownWindow.windowIdentifier = "main"
         check(TargetWindow(pid: 1, bundle: "com.tdesktop.Telegram", frame: window, identifier: "photo-viewer").resolved(knownWindow, mode: .voice) == nil, "reject other Telegram window")
+        check(!TargetWindow(pid: 1, bundle: "com.tdesktop.Telegram", frame: window, identifier: "other-window").matches(knownWindow), "window checks preserve known identity before Enter")
+        var generic = calibration; generic.bundle = "com.apple.TextEdit"
+        check(TargetWindow(pid: 2, bundle: "com.apple.TextEdit", frame: window).resolved(generic, mode: .voice) != nil, "non-Telegram calibrated application is supported")
+        check(TargetWindow.permits(bundle: "com.apple.TextEdit", expectedBundle: nil), "calibration can choose a normal application")
+        check(TargetWindow.permits(bundle: "com.google.Chrome", expectedBundle: "com.google.Chrome"), "chosen browser is allowed")
+        check(!TargetWindow.permits(bundle: "com.apple.TextEdit", expectedBundle: "com.google.Chrome"), "other foreground app cannot receive the answer")
+        check(!TargetWindow.permits(bundle: "local.oshi.bbdv", expectedBundle: nil), "application cannot calibrate itself")
+        check(!TargetWindow.permits(bundle: "com.apple.loginwindow", expectedBundle: nil), "login window is excluded")
+        check(InputFieldPolicy.accepts(role: "AXTextArea", subrole: nil), "normal text areas accepted")
+        check(!InputFieldPolicy.accepts(role: "AXTextField", subrole: "AXSecureTextField"), "password fields are excluded")
+        check(!InputFieldPolicy.accepts(role: "AXButton", subrole: nil), "buttons cannot be treated as input fields")
         let legacyData = try JSONEncoder().encode(calibration)
         let legacy = try JSONDecoder().decode(Calibration.self, from: legacyData)
         check(legacy.windowIdentifier == nil && moved.resolved(legacy, mode: .voice) != nil, "old calibrations migrate without re-selection")

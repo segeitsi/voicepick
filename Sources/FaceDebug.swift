@@ -34,7 +34,7 @@ final class FaceDebugModel: ObservableObject {
          }, canCapture: @escaping () -> Bool = CGPreflightScreenCaptureAccess,
          pollInterval: Duration = .milliseconds(900)) {
         self.capture = capture; self.analyze = analyze; self.canCapture = canCapture; self.pollInterval = pollInterval
-        stopObserver = NotificationCenter.default.addObserver(forName: .stopBBDV, object: nil, queue: .main) { [weak self] _ in
+        stopObserver = NotificationCenter.default.addObserver(forName: .stopVoicePick, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.stop() }
         }
     }
@@ -114,7 +114,7 @@ final class FaceDebugModel: ObservableObject {
         if !CGPreflightScreenCaptureAccess(), let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
-        status = "Включи запись экрана для ББ ДВ. Если macOS попросит, перезапусти приложение."
+        status = "Включи запись экрана для VoicePick. Если macOS попросит, перезапусти приложение."
     }
 
     func watch() {
@@ -252,8 +252,8 @@ struct FaceDebugView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Looksmax · отладка").font(.system(size: 25, weight: .bold))
-                    Text("Категории по твоим эталонам · сравнение на Mac")
+                    Text("Анализ лица").font(.system(size: 25, weight: .bold))
+                    Text("Сравнение с твоими эталонами на Mac")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -267,7 +267,7 @@ struct FaceDebugView: View {
                 else { Button("Наблюдать", systemImage: "eye") { model.watch() }.disabled(model.region == nil) }
             }.buttonStyle(.bordered)
             Text(model.status).font(.system(size: 14, weight: .medium)).foregroundStyle(accent)
-            Text("Область работает поверх любого приложения. После выделения наблюдение начнётся само. Для выбора без основного окна используй значок ББ / ДВ в строке меню.")
+            Text("Область работает поверх любого приложения. После выделения наблюдение начнётся само. Для выбора без основного окна используй значок VoicePick в строке меню.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             if let result = model.result {
                 Toggle("Показать карту лица", isOn: $model.showsLandmarks).toggleStyle(.switch)

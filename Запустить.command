@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-if [ ! -x "build/ББ ДВ.app/Contents/MacOS/BBDV" ]; then
+if [ ! -x "build/VoicePick.app/Contents/MacOS/VoicePick" ]; then
   bash scripts/build.sh
 fi
-open "build/ББ ДВ.app"
+open "build/VoicePick.app"

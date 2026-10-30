@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import ScreenCaptureKit
 
-extension Notification.Name { static let stopBBDV = Notification.Name("stopBBDV") }
+extension Notification.Name { static let stopVoicePick = Notification.Name("stopVoicePick") }
 
 enum AccessibilityAccess {
     static func isGranted() -> Bool {
@@ -12,7 +12,7 @@ enum AccessibilityAccess {
         // Read the application's role, never message or clipboard contents.
         let canPost = CGPreflightPostEventAccess()
         guard canPost, let app = NSWorkspace.shared.runningApplications.first(where: {
-            TargetWindow.telegramBundles.contains($0.bundleIdentifier ?? "")
+            $0.activationPolicy == .regular && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
         }) else { return false }
         let element = AXUIElementCreateApplication(app.processIdentifier)
         var value: CFTypeRef?
@@ -44,13 +44,6 @@ struct Calibration: Codable {
         return result
     }
 
-    func guessedInput(in frame: CGRect) -> CGPoint? {
-        guard let original = window, let input else { return nil }
-        // Telegram's composer stays near the bottom/right when its window resizes.
-        let point = CGPoint(x: frame.maxX - (original.maxX - input.x),
-                            y: frame.maxY - (original.maxY - input.y))
-        return frame.contains(point) ? point : nil
-    }
 }
 
 struct TargetWindow {
@@ -59,12 +52,14 @@ struct TargetWindow {
     let frame: CGRect
     var element: AXUIElement? = nil
     var identifier: String? = nil
-    static let telegramBundles: Set<String> = [
-        "com.tdesktop.Telegram", "ru.keepcoder.Telegram", "org.telegram.desktop", "org.telegram.Telegram"
-    ]
-    static func current() -> TargetWindow? {
+    static func permits(bundle: String, expectedBundle: String?) -> Bool {
+        guard !bundle.isEmpty, bundle != (Bundle.main.bundleIdentifier ?? "local.oshi.bbdv"),
+              bundle != "local.oshi.bbdv", bundle != "com.apple.loginwindow" else { return false }
+        return expectedBundle.map { bundle == $0 } ?? true
+    }
+    static func current(expectedBundle: String? = nil) -> TargetWindow? {
         guard let app = NSWorkspace.shared.frontmostApplication,
-              let bundle = app.bundleIdentifier, telegramBundles.contains(bundle) else { return nil }
+              let bundle = app.bundleIdentifier, permits(bundle: bundle, expectedBundle: expectedBundle) else { return nil }
         // Accessibility returns the actual focused window and works in voice mode
         // without Screen Recording permission. The window list is only a fallback.
         let root = AXUIElementCreateApplication(app.processIdentifier)
@@ -95,6 +90,7 @@ struct TargetWindow {
     }
     func matches(_ calibration: Calibration) -> Bool {
         guard bundle == calibration.bundle, let frame = calibration.window else { return false }
+        if let saved = calibration.windowIdentifier, let identifier, saved != identifier { return false }
         return abs(self.frame.minX - frame.minX) < 3 && abs(self.frame.minY - frame.minY) < 3 &&
                abs(self.frame.width - frame.width) < 3 && abs(self.frame.height - frame.height) < 3
     }
@@ -108,37 +104,13 @@ struct TargetWindow {
             if mode == .random, !translated.isComplete { return nil }
             return translated
         }
-        // A resized crop cannot be inferred safely; voice mode only needs the composer.
-        guard mode == .voice, let point = messageInputPoint(near: calibration.guessedInput(in: frame)) else { return nil }
-        var result = calibration
-        result.input = point; result.region = nil; result.window = frame
-        result.windowIdentifier = identifier ?? calibration.windowIdentifier
-        return result
-    }
-
-    private func messageInputPoint(near guess: CGPoint?) -> CGPoint? {
-        let root = AXUIElementCreateApplication(pid)
-        if let guess {
-            var field: AXUIElement?
-            if AXUIElementCopyElementAtPosition(root, Float(guess.x), Float(guess.y), &field) == .success,
-               let field, let point = composerPoint(field) { return point }
-        }
-        if let value = AXRead.attribute(root, kAXFocusedUIElementAttribute), CFGetTypeID(value) == AXUIElementGetTypeID() {
-            return composerPoint(value as! AXUIElement)
-        }
+        // Arbitrary layouts cannot safely infer a field after resize.
         return nil
-    }
-
-    private func composerPoint(_ field: AXUIElement) -> CGPoint? {
-        let role = AXRead.attribute(field, kAXRoleAttribute) as? String ?? ""
-        guard [kAXTextAreaRole, kAXTextFieldRole].contains(role), let fieldFrame = AXRead.frame(field),
-              frame.contains(fieldFrame), fieldFrame.midY > frame.midY else { return nil }
-        return CGPoint(x: fieldFrame.midX, y: fieldFrame.midY)
     }
 
     @MainActor
     static func activate(bundle: String?) -> Bool {
-        guard let bundle, telegramBundles.contains(bundle),
+        guard let bundle, permits(bundle: bundle, expectedBundle: bundle),
               let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundle }) else { return false }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier { return true }
         NSApp.yieldActivation(to: app)
@@ -250,9 +222,9 @@ private final class SelectionView: NSView {
             NSColor.systemMint.withAlphaComponent(0.18).setFill(); rect.fill()
             NSColor.systemMint.setStroke(); let path = NSBezierPath(rect: rect); path.lineWidth = 3; path.stroke()
         }
-        let heading = title ?? (point ? "Кликни в пустое поле сообщения Telegram" : "Обведи фото и текст одной анкеты")
+        let heading = title ?? (point ? "Кликни в пустое поле ввода" : "Обведи содержимое одной карточки")
         let text = heading + (title != nil ? "\nМожно выбрать область в любом приложении. Esc — отмена."
-                              : point ? "\nВыбери поле сообщения, а не кнопку бота. Esc — отмена."
+                              : point ? "\nВыбери текстовое поле для ответа. Esc — отмена."
                                       : "\nНе включай поле ввода и кнопки. Esc — отмена.")
         let style = NSMutableParagraphStyle(); style.alignment = .center
         (text as NSString).draw(in: CGRect(x: 40, y: bounds.maxY - 125, width: bounds.width - 80, height: 90),
@@ -320,32 +292,36 @@ enum ScreenReader {
 @MainActor
 final class InputWriter {
     private(set) var lastDraft: String?
+    private var lastDraftCalibration: Calibration?
 
-    func write(_ text: String, mode: RunMode, calibration: Calibration, valid: () -> Bool) async throws {
-        guard valid(), let target = TargetWindow.current(),
+    func write(_ text: String, mode: RunMode, calibration: Calibration, sendReturn: Bool? = nil, valid: () -> Bool) async throws {
+        guard valid(), let target = TargetWindow.current(expectedBundle: calibration.bundle),
               let resolved = target.resolved(calibration, mode: mode), let point = resolved.input else {
-            throw DesktopError.message("Не найдено настроенное поле Telegram. Если изменён размер окна — укажи поле ещё раз.")
+            throw DesktopError.message("Не найдено настроенное поле. После изменения размера окна укажи поле ещё раз.")
         }
-        // A calibrated click is needed because Telegram's reply keyboards can own focus.
+        // Click the calibrated field because another control may currently own focus.
         postMouse(.leftMouseDown, point); postMouse(.leftMouseUp, point)
         try await Task.sleep(for: .milliseconds(140))
         try Task.checkCancellation()
-        guard valid(), TargetWindow.current()?.matches(resolved) == true else { throw CancellationError() }
+        guard valid(), TargetWindow.current(expectedBundle: resolved.bundle)?.matches(resolved) == true else { throw CancellationError() }
         let field = focusedField(pid: target.pid)
-        let allowed = [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole] as [String]
-        guard let field, allowed.contains(attribute(field, kAXRoleAttribute) as? String ?? "") else {
-            throw DesktopError.message("Не вижу текстовое поле. Выбери именно поле сообщения; проверь доступ «Универсальный доступ».")
+        guard let field, InputFieldPolicy.accepts(role: attribute(field, kAXRoleAttribute) as? String ?? "",
+                                                 subrole: attribute(field, kAXSubroleAttribute) as? String) else {
+            throw DesktopError.message("Не вижу доступное текстовое поле. Выбери обычное поле ввода и проверь Универсальный доступ.")
         }
         guard let contents = attribute(field, kAXValueAttribute) as? String else {
-            throw DesktopError.message("Telegram не даёт прочитать поле ввода. Проверь разрешения и попробуй Telegram Desktop.")
+            throw DesktopError.message("Это приложение не даёт прочитать поле ввода через Универсальный доступ. Выбери другое поле или приложение.")
         }
         let trimmed = contents.trimmingCharacters(in: .whitespacesAndNewlines)
         // Never overwrite a user's existing message or send it with a rating appended.
-        guard trimmed.isEmpty || lastDraft.map({ Submission.equalText(trimmed, $0) }) == true else {
+        let previous = lastDraftCalibration.flatMap { target.resolved($0, mode: mode) }
+        let sameTarget = previous?.input == resolved.input && previous?.windowIdentifier == resolved.windowIdentifier
+        guard trimmed.isEmpty || (sameTarget && lastDraft.map({ Submission.equalText(trimmed, $0) }) == true) else {
             throw DesktopError.message("В поле уже есть текст. Отправь или очисти его вручную и запусти снова.")
         }
         if !trimmed.isEmpty { try await key(0, flags: .maskCommand); try await key(51) }
-        let pasteText = Submission.pasteText(text, mode: mode)
+        let shouldSend = mode.sendsReturn && (sendReturn ?? true)
+        let pasteText = Submission.pasteText(text, mode: shouldSend ? .voice : .random)
         let board = NSPasteboard.general
         let backup = (board.pasteboardItems ?? []).map { item -> NSPasteboardItem in
             let copy = NSPasteboardItem()
@@ -360,25 +336,26 @@ final class InputWriter {
         }
         try await key(9, flags: .maskCommand)
         lastDraft = text
+        lastDraftCalibration = resolved
         let originalFrame = AXRead.frame(field)
         let originalID = attribute(field, kAXIdentifierAttribute) as? String
         func readComposer() throws -> String? {
             try Task.checkCancellation()
-            guard valid(), TargetWindow.current()?.matches(resolved) == true,
+            guard valid(), TargetWindow.current(expectedBundle: resolved.bundle)?.matches(resolved) == true,
                   let now = focusedField(pid: target.pid) else { throw CancellationError() }
             // Qt can recreate its AX wrapper after paste. Verify the stable field
             // identifier and position rather than requiring wrapper identity.
             let sameField = CFEqual(field, now) ||
                 (originalID?.isEmpty == false && originalID == attribute(now, kAXIdentifierAttribute) as? String &&
                  originalFrame != nil && originalFrame == AXRead.frame(now))
-            guard sameField else { throw DesktopError.message("Фокус ушёл из поля сообщения. Отправка остановлена.") }
+            guard sameField else { throw DesktopError.message("Фокус ушёл из поля ввода. Ввод остановлен.") }
             return attribute(now, kAXValueAttribute) as? String
         }
-        try await Submission.confirmAndSubmit(pasteText, mode: mode, read: readComposer, pressReturn: {
+        try await Submission.confirmAndSubmit(pasteText, mode: mode, sendReturn: shouldSend, read: readComposer, pressReturn: {
             _ = try readComposer()
             try await self.key(36)
         })
-        if mode.sendsReturn { lastDraft = nil }
+        if shouldSend { lastDraft = nil; lastDraftCalibration = nil }
     }
 
     private func focusedField(pid: pid_t) -> AXUIElement? {

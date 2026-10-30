@@ -27,7 +27,7 @@ final class VoiceListener {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var recognition: SFSpeechRecognitionTask?
     private var debounce: Task<Void, Never>?
-    private var session = VoiceCommandSession(service: .bibinta)
+    private var session = VoiceCommandSession(inputKind: .rating)
     private var sessionEnded = false
     private var renewal: Task<Void, Never>?
     private var tapping = false
@@ -37,7 +37,7 @@ final class VoiceListener {
     var command: ((VoiceCommand) -> Void)?
     var failure: ((String) -> Void)?
     var reconnecting: (() -> Void)?
-    var service = Service.bibinta
+    var inputKind = InputKind.rating
     var usesLocalRecognition: Bool { recognizer?.supportsOnDeviceRecognition == true }
 
     static func authorize() async -> Bool {
@@ -50,7 +50,7 @@ final class VoiceListener {
 
     func start() throws {
         active = true; failures = 0
-        session = VoiceCommandSession(service: service)
+        session = VoiceCommandSession(inputKind: inputKind)
         do {
             try beginRecognition()
             let input = engine.inputNode

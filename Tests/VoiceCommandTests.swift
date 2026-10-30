@@ -66,13 +66,13 @@ struct VoiceCommandTests {
         for (index, rating) in ratings.enumerated() {
             for value in [rating, String(index + 1)] {
                 for phrase in [value + " идем дальше", "ну этой " + value + " идем дальше", "бро вообще " + value] {
-                    stream = VoiceCommandStream(service: .bibinta)
+                    stream = VoiceCommandStream(inputKind: .rating)
                     stream.observe(words(phrase), now: 0)
                     check(stream.takeDue(now: 0.35) == .rating(index + 1), "Bibinta number anywhere: " + phrase)
                 }
             }
         }
-        stream = VoiceCommandStream(service: .bibinta)
+        stream = VoiceCommandStream(inputKind: .rating)
         stream.observe(words("бро ну этой"), now: 0)
         check(stream.deadline == nil, "Bibinta waits for a number rather than arbitrary words")
         stream.observe(words("бро ну этой пять"), now: 1)
@@ -85,30 +85,30 @@ struct VoiceCommandTests {
         check(stream.takeDue(now: 3.35) == .rating(5), "Bibinta same number spoken again works without restarting recognition")
         stream.observe(words("бро ну этой пять короче идем дальше я еще говорю пять теперь восемь"), now: 4)
         check(stream.takeDue(now: 4.35) == .rating(8), "Bibinta next different number works without silence")
-        stream = VoiceCommandStream(service: .bibinta)
+        stream = VoiceCommandStream(inputKind: .rating)
         stream.observe(words("ну пять"), now: 0)
         stream.observe(words("ну я говорю"), now: 0.2)
         check(stream.takeDue(now: 0.35) == .rating(5), "Bibinta transient revision does not erase a heard rating")
-        stream = VoiceCommandStream(service: .bibinta)
+        stream = VoiceCommandStream(inputKind: .rating)
         stream.observe(words("ну пять"), now: 0)
         stream.observe(words("ну пять нет семь"), now: 0.3)
         check(stream.takeDue(now: 0.35) == .rating(7), "Bibinta quick correction sends the last number")
-        stream = VoiceCommandStream(service: .bibinta)
+        stream = VoiceCommandStream(inputKind: .rating)
         stream.observe(words("ну 5 нет 7"), now: 0)
         check(stream.takeDue(now: 0.35) == .rating(7), "Bibinta digit correction matches spoken word correction")
         for phrase in ["ну 0", "бро 11", "смотри 100", "пятьдесят вообще", "ну 1.5", "ну 1,5", "ну -5", "лайк дизлайк"] {
-            stream = VoiceCommandStream(service: .bibinta)
+            stream = VoiceCommandStream(inputKind: .rating)
             stream.observe(words(phrase), now: 0)
-            check(stream.deadline == nil, "Bibinta ignores invalid numbers and other service commands: " + phrase)
+            check(stream.deadline == nil, "Bibinta ignores invalid numbers and other inputKind commands: " + phrase)
         }
-        stream = VoiceCommandStream(service: .bibinta)
+        stream = VoiceCommandStream(inputKind: .rating)
         stream.observe(words("пять ладно стоп"), now: 0)
         check(stream.takeDue(now: 0.35) == .stop, "Bibinta stop inside a phrase prevents sending the rating")
 
         // Regression: macOS may give each new phrase a short transcript again.
         // A counter tied to one long transcript accepts the first rating then
         // incorrectly treats these later, genuinely new ratings as already sent.
-        var session = VoiceCommandSession(service: .bibinta)
+        var session = VoiceCommandSession(inputKind: .rating)
         var previousTokens: [UUID] = []
         for index in 0..<20 {
             let number = index % 10 + 1
@@ -127,7 +127,7 @@ struct VoiceCommandTests {
             }
             previousTokens.append(token)
         }
-        session = VoiceCommandSession(service: .bibinta)
+        session = VoiceCommandSession(inputKind: .rating)
         for index in 0..<10 {
             let token = session.token, now = Double(index)
             session.observe("мяу мяу мяу три", token: token, now: now)
@@ -141,7 +141,7 @@ struct VoiceCommandTests {
         let renewed = session.token
         session.observe("ну восемь идем дальше", token: renewed, now: 32)
         check(session.takeDue(token: renewed, now: 32.36) == .rating(8), "recognition continues after a restart")
-        session = VoiceCommandSession(service: .davinchik)
+        session = VoiceCommandSession(inputKind: .reaction)
         for index in 0..<6 {
             let token = session.token, now = Double(index)
             session.observe("дизлайк идем дальше", token: token, now: now)

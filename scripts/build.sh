@@ -2,11 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 bash scripts/build-mesh.sh
-app="${BBDV_BUILD_APP_DIR:-build/ББ ДВ.app}"
+app="${BBDV_BUILD_APP_DIR:-build/VoicePick.app}"
 mkdir -p build/module-cache "$app/Contents/MacOS" "$app/Contents/Resources"
 xcrun swiftc -swift-version 5 -O -parse-as-library -target arm64-apple-macosx15.2 \
   -module-cache-path build/module-cache Sources/*.swift \
-  -o "$app/Contents/MacOS/BBDV"
+  -o "$app/Contents/MacOS/VoicePick"
 cp assets/Info.plist "$app/Contents/Info.plist"
 if [[ -f assets/drawing-references.json ]]; then
   cp assets/drawing-references.json "$app/Contents/Resources/drawing-references.json"

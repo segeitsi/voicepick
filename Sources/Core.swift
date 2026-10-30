@@ -1,8 +1,15 @@
 import Foundation
 
-enum Service: String, Codable, CaseIterable {
-    case bibinta, davinchik
-    var title: String { self == .bibinta ? "Бибинта" : "Давинчик" }
+enum InputKind: String, Codable, CaseIterable {
+    // Preserve stored keys from releases before the VoicePick name.
+    case rating = "bibinta", reaction = "davinchik"
+    var title: String { self == .rating ? "Число 1–10" : "Лайк / дизлайк" }
+}
+
+enum InputFieldPolicy {
+    static func accepts(role: String, subrole: String?) -> Bool {
+        ["AXTextArea", "AXTextField", "AXComboBox"].contains(role) && subrole != "AXSecureTextField"
+    }
 }
 
 enum RunMode: String, Codable, CaseIterable {
@@ -32,15 +39,15 @@ enum CommandParser {
         }
     }
 
-    static func parse(_ text: String, service: Service) -> VoiceCommand? {
+    static func parse(_ text: String, inputKind: InputKind) -> VoiceCommand? {
         let words = tokens(text)
         if words.contains(where: { ["стоп", "пауза", "остановись"].contains($0) }) { return .stop }
         let normalized = words.joined(separator: " ")
-        return parseService(normalized, service: service)
+        return parseInputKind(normalized, inputKind: inputKind)
     }
 
-    private static func parseService(_ normalized: String, service: Service) -> VoiceCommand? {
-        if service == .bibinta {
+    private static func parseInputKind(_ normalized: String, inputKind: InputKind) -> VoiceCommand? {
+        if inputKind == .rating {
             let words = ["один": 1, "единица": 1, "два": 2, "двойка": 2,
                          "три": 3, "тройка": 3, "четыре": 4, "четверка": 4,
                          "пять": 5, "пятерка": 5, "шесть": 6, "шестерка": 6,
@@ -119,9 +126,9 @@ struct ProfileDetector {
 }
 
 enum RandomChoice {
-    static func value(service: Service, minimum: Int, maximum: Int, likePercent: Int,
+    static func value(inputKind: InputKind, minimum: Int, maximum: Int, likePercent: Int,
                       like: String, dislike: String) -> String {
-        if service == .bibinta {
+        if inputKind == .rating {
             let lower = min(10, max(1, minimum))
             let upper = min(10, max(lower, maximum))
             return String(Int.random(in: lower...upper))

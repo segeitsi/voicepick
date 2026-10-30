@@ -28,6 +28,15 @@ struct SubmissionTests {
             }, pause: {})
             check(returns == 0 && value == rendered, "random leaves draft without Enter")
         }
+        value = "5"; returns = 0
+        try await Submission.confirmAndSubmit("5", mode: .voice, sendReturn: false, read: { value }, pressReturn: {
+            returns += 1
+        }, pause: {})
+        check(returns == 0 && value == "5", "voice input can leave a value in an ordinary form without Enter")
+        try await Submission.confirmAndSubmit("5", mode: .random, sendReturn: true, read: { value }, pressReturn: {
+            returns += 1
+        }, pause: {})
+        check(returns == 0, "random mode cannot send even when Enter override is true")
         for emoji in ["❤️", "👎"] {
             let draft = Submission.pasteText(emoji, mode: .random)
             check(draft == emoji + " ", "random emoji suppresses sticker suggestions with ordinary space")

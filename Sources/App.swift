@@ -2,16 +2,16 @@ import SwiftUI
 import AppKit
 
 @main
-struct BBDVApp: App {
+struct VoicePickApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var model = AppModel()
     @StateObject private var faceDebug = FaceDebugModel()
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        WindowGroup("ББ / ДВ", id: "main") {
+        WindowGroup("VoicePick", id: "main") {
             MainView(model: model, faceDebug: faceDebug).preferredColorScheme(.dark)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshPermissions() }
-                .onReceive(NotificationCenter.default.publisher(for: .stopBBDV)) { _ in model.stop() }
+                .onReceive(NotificationCenter.default.publisher(for: .stopVoicePick)) { _ in model.stop() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
         }
         .defaultSize(width: 820, height: 860)
@@ -19,11 +19,11 @@ struct BBDVApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("Управление") {
-                Button("Остановить") { model.stop(); NotificationCenter.default.post(name: .stopBBDV, object: nil) }.keyboardShortcut("s", modifiers: [.control, .option])
+                Button("Остановить") { model.stop(); NotificationCenter.default.post(name: .stopVoicePick, object: nil) }.keyboardShortcut("s", modifiers: [.control, .option])
                 Button("Перезапустить приложение") { model.restartApp() }
             }
         }
-        MenuBarExtra("ББ / ДВ", systemImage: "viewfinder") {
+        MenuBarExtra("VoicePick", systemImage: "viewfinder") {
             Text(faceDebug.watching ? "Наблюдение включено" : "Наблюдение на паузе")
             Text(faceDebug.status).font(.caption)
             Button("Выбрать область и наблюдать") { model.stop(); faceDebug.chooseRegion(immediate: true) }
@@ -33,7 +33,7 @@ struct BBDVApp: App {
             Divider()
             Button("Показать окно") { openWindow(id: "main"); NSApp.unhide(nil); NSApp.activate() }
             Button("Разрешить запись экрана") { faceDebug.allowScreen() }
-            Button("Завершить ББ / ДВ") { model.stop(); faceDebug.stop(); NSApp.terminate(nil) }
+            Button("Завершить VoicePick") { model.stop(); faceDebug.stop(); NSApp.terminate(nil) }
         }
     }
 }
@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct MainView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var faceDebug: FaceDebugModel
-    @State private var showsFaceDebug = true
+    @State private var showsFaceDebug = false
     private let accent = Color(red: 0.64, green: 0.52, blue: 1)
     private let mint = Color(red: 0.40, green: 0.91, blue: 0.73)
     private var busy: Bool { model.running || model.preparing }
@@ -59,25 +59,25 @@ struct MainView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 HStack {
-                    Button("Управление ботами") { faceDebug.stop(); showsFaceDebug = false }
+                    Button("Голосование вводом") { faceDebug.stop(); showsFaceDebug = false }
                         .tint(showsFaceDebug ? .gray : accent)
-                    Button("Оценка лица · отладка") { model.stop(); showsFaceDebug = true }
+                    Button("Анализ лица") { model.stop(); showsFaceDebug = true }
                         .tint(showsFaceDebug ? accent : .gray)
                 }.buttonStyle(.bordered)
                 if showsFaceDebug {
                     FaceDebugView(model: faceDebug)
                 } else {
                 HStack(spacing: 12) {
-                    modeCard(.voice, title: "Голос", icon: "waveform", detail: "Сказал → ввёл → отправил")
-                    modeCard(.random, title: "Рандомайзер", icon: "dice", detail: "Новая анкета → черновик")
+                    modeCard(.voice, title: "Голос", icon: "waveform", detail: "Сказал → ввёл в выбранное поле")
+                    modeCard(.random, title: "Рандомайзер", icon: "dice", detail: "Новая карточка → черновик")
                 }.disabled(busy)
                 HStack {
-                    Text("БОТ").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
-                    Picker("Бот", selection: $model.settings.service) {
-                        ForEach(Service.allCases, id: \.self) { Text($0.title).tag($0) }
+                    Text("ОТВЕТ").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                    Picker("Формат ответа", selection: $model.settings.inputKind) {
+                        ForEach(InputKind.allCases, id: \.self) { Text($0.title).tag($0) }
                     }.pickerStyle(.segmented).labelsHidden().frame(width: 330).disabled(busy)
                     Spacer()
-                    Text(model.settings.mode == .voice ? "Enter автоматически" : "Enter только вручную")
+                    Text(model.settings.mode == .voice && model.settings.sendReturn ? "Enter автоматически" : "Enter вручную")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(model.settings.mode == .voice ? accent : mint)
                 }
                 configuration
@@ -86,21 +86,24 @@ struct MainView: View {
                 permissions
                 if !model.entries.isEmpty { history }
                 }
-                Text("v1.3.1 · macOS · Ctrl+Option+S — стоп")
+                Text("v1.4.0 · macOS · Ctrl+Option+S: стоп")
                     .font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             }.padding(28)
         }
         .background(Color(red: 0.065, green: 0.073, blue: 0.10))
         .frame(minWidth: 760, minHeight: 730)
-        .onReceive(NotificationCenter.default.publisher(for: .stopBBDV)) { _ in faceDebug.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: .stopVoicePick)) { _ in faceDebug.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in faceDebug.stop() }
     }
 
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("ББ / ДВ").font(.system(size: 34, weight: .heavy, design: .rounded))
-                Text(showsFaceDebug ? "Категории по твоим эталонам." : "Твой голос. Твой выбор.").font(.system(size: 14)).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Image(systemName: "waveform.circle.fill").foregroundStyle(accent)
+                    Text("VoicePick")
+                }.font(.system(size: 34, weight: .heavy, design: .rounded))
+                Text(showsFaceDebug ? "Локальное сравнение лиц с твоими эталонами." : "Числа и реакции голосом в выбранное поле.").font(.system(size: 14)).foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 7) {
@@ -129,10 +132,15 @@ struct MainView: View {
 
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if model.settings.service == .bibinta {
+            if model.settings.mode == .voice {
+                Toggle("Нажимать Enter после голосового ввода", isOn: $model.settings.sendReturn)
+                Text("Включай для полей, которые отправляют ответ и очищаются после Enter. Для форм можно оставить только ввод.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            if model.settings.inputKind == .rating {
                 if model.settings.mode == .voice {
                     Text("Говори число от 1 до 10 в любой части предложения.").font(.system(size: 14))
-                    Text("Например: «Ну этой пять, идём дальше». Через 0,35 с число вводится и отправляется через Enter. Можно продолжать говорить. «Стоп» и «пауза» останавливают приложение.")
+                    Text("Например: «Поставь пять, идём дальше». Через 0,35 с число вводится в поле. Enter зависит от переключателя выше. «Стоп» и «пауза» останавливают ввод.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 } else {
                     HStack {
@@ -161,7 +169,7 @@ struct MainView: View {
                     Text("«Лайк» / «нравится» → лайк. «Дизлайк» / «не нравится» / «пропуск» → дизлайк. Команда срабатывает внутри фразы через 0,35 с.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                Text("Поставь эмодзи с кнопок своего бота. Приложение вставляет их в сообщение.")
+                Text("Задай два ответа: эмодзи, слова или короткий текст. Они вводятся в выбранное поле.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
@@ -171,9 +179,9 @@ struct MainView: View {
     private var calibration: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Настройка Telegram").font(.system(size: 15, weight: .semibold))
+                Text("Куда вводить ответ").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text("Для каждого бота отдельно").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(model.targetName).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
                 Button { model.calibrate(point: true) } label: {
@@ -182,19 +190,19 @@ struct MainView: View {
                 }.disabled(busy)
                 if model.settings.mode == .random {
                     Button { model.calibrate(point: false) } label: {
-                        Label(model.calibration.region == nil ? "Выделить анкету" : "Область анкеты ✓", systemImage: "viewfinder")
+                        Label(model.calibration.region == nil ? "Выделить карточку" : "Область карточки ✓", systemImage: "viewfinder")
                             .frame(maxWidth: .infinity).padding(.vertical, 8)
                     }.disabled(busy)
                 }
             }
-            Text("После нажатия у тебя 4 секунды, чтобы открыть нужного бота. Затем выбери место мышкой. Привязка следует за перемещением окна.")
+            Text("После нажатия у тебя 4 секунды, чтобы открыть нужное приложение. Выбери пустое поле мышкой. Привязка следует за перемещением окна; после изменения размера выбери поле заново.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Проверить Telegram без отправки") { model.checkTelegram() }.disabled(busy).font(.system(size: 12))
+            Button("Проверить выбранное окно") { model.checkTarget() }.disabled(busy).font(.system(size: 12))
             if model.settings.mode == .voice {
-                DisclosureGroup("Проверка отправки") {
-                    Text("Открой нужного бота. Тест вставит команду и отправит её через 4 секунды тем же способом, что голосовой режим.")
+                DisclosureGroup("Проверка ввода") {
+                    Text("Открой выбранное приложение. Тест вставит ответ через 4 секунды. Enter зависит от переключателя в настройках.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    Button("Тест отправки: отправить \(model.testMessage)") { model.testVoiceSend() }
+                    Button("Тест ввода: \(model.testMessage)") { model.testVoiceInput() }
                         .disabled(busy).font(.system(size: 12))
                 }.font(.system(size: 12))
             }
@@ -210,7 +218,7 @@ struct MainView: View {
                             Slider(value: $model.settings.sensitivity, in: 0.04...0.20, step: 0.01).disabled(busy)
                             Text(String(format: "%.0f%%", model.settings.sensitivity * 100)).frame(width: 45)
                         }
-                        Text("Меньше — замечает небольшие изменения. Больше — меньше ложных срабатываний. Выделяй фото и текст одной анкеты, без кнопок и поля ввода.")
+                        Text("Уменьши порог, чтобы замечать небольшие изменения. Увеличь, чтобы уменьшить число ложных срабатываний. Выделяй одну карточку или область с меняющимся содержимым, без кнопок и поля ввода.")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }.padding(.top, 10)
                 }.font(.system(size: 12))
@@ -238,7 +246,7 @@ struct MainView: View {
                 }.buttonStyle(.plain)
             }
             if model.settings.mode == .random {
-                Label("Enter нажимаешь ты. После Enter ждём изменение анкеты.", systemImage: "keyboard")
+                Label("Enter нажимаешь ты. После Enter ждём изменение карточки.", systemImage: "keyboard")
                     .font(.system(size: 12)).foregroundStyle(mint)
             } else {
                 Text(model.localVoice ? "Речь распознаётся на устройстве, если язык доступен в macOS." : "Речь распознаётся сервисом Apple; может понадобиться интернет.")
@@ -258,7 +266,7 @@ struct MainView: View {
             }
           }
           if !model.accessibility {
-              Text("Тумблер уже включён? Перезапусти приложение. Если не помогло: удали только «ББ ДВ» из списка Универсального доступа кнопкой −, добавь текущую сборку через + и включи доступ снова.")
+              Text("Тумблер уже включён? Перезапусти приложение. Если не помогло: удали только VoicePick (или прежнюю запись «ББ ДВ») из списка Универсального доступа кнопкой −, добавь текущую сборку через + и включи доступ снова.")
                   .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
               HStack {
                   Button("Проверить доступ") { model.refreshPermissions() }

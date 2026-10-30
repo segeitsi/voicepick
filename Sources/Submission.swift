@@ -4,8 +4,8 @@ enum SubmissionError: LocalizedError {
     case unconfirmedInput, unconfirmedSend
     var errorDescription: String? {
         switch self {
-        case .unconfirmedInput: return "Не удалось проверить вставленный текст. Черновик оставлен в Telegram."
-        case .unconfirmedSend: return "Отправка выполнена, но поле не очистилось. Проверь Telegram и отправь черновик вручную."
+        case .unconfirmedInput: return "Не удалось проверить вставленный текст. Ответ оставлен в поле ввода."
+        case .unconfirmedSend: return "Отправка выполнена, но поле не очистилось. Проверь выбранное поле и заверши ввод вручную."
         }
     }
 }
@@ -52,6 +52,7 @@ enum Submission {
 
     static func confirmAndSubmit(
         _ text: String, mode: RunMode,
+        sendReturn: Bool? = nil,
         read: () throws -> String?,
         pressReturn: () async throws -> Void,
         pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(100)) }
@@ -65,7 +66,7 @@ enum Submission {
             try await pause()
         }
         guard let confirmedValue else { throw SubmissionError.unconfirmedInput }
-        guard mode.sendsReturn else { return }
+        guard mode.sendsReturn && (sendReturn ?? true) else { return }
         try Task.checkCancellation()
         guard try read() == confirmedValue else { throw SubmissionError.unconfirmedInput }
         try await pressReturn()

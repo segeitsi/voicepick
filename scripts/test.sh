@@ -9,6 +9,10 @@ build/tests/core-tests
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path build/module-cache \
   Sources/Core.swift Sources/VoiceCommands.swift Tests/VoiceCommandTests.swift -o build/tests/voice-tests
 build/tests/voice-tests
+xcrun swiftc -swift-version 5 -parse-as-library -target arm64-apple-macosx15.2 -module-cache-path build/module-cache \
+  Sources/Core.swift Sources/Submission.swift Sources/Desktop.swift Sources/VoiceCommands.swift Sources/Voice.swift Sources/Model.swift \
+  Tests/SettingsTests.swift -o build/tests/settings-tests
+build/tests/settings-tests
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path build/module-cache \
   Sources/FaceRating.swift Tests/FaceRatingTests.swift -o build/tests/face-tests
 build/tests/face-tests
