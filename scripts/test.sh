@@ -23,7 +23,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -target arm64-apple-macosx15.2 -
   Sources/Core.swift Sources/Submission.swift Sources/Desktop.swift Tests/DesktopTests.swift -o build/tests/desktop-tests
 build/tests/desktop-tests
 xcrun swiftc -swift-version 5 -parse-as-library -target arm64-apple-macosx15.2 -module-cache-path build/module-cache \
-  Sources/Core.swift Sources/Submission.swift Sources/Desktop.swift Sources/FaceRating.swift Sources/FaceMesh.swift Sources/FaceAnalysis.swift Sources/FaceReferences.swift Sources/FaceDebug.swift \
+  Sources/Core.swift Sources/Submission.swift Sources/Desktop.swift Sources/FaceRating.swift Sources/FaceMesh.swift Sources/FaceAnalysis.swift Sources/FaceReferences.swift Sources/FaceDebug.swift Sources/WorkspaceStyle.swift \
   Tests/ScreenWatchTests.swift -o build/tests/screen-watch-tests
 build/tests/screen-watch-tests
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path build/module-cache \

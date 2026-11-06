@@ -247,55 +247,76 @@ final class FaceDebugModel: ObservableObject {
 
 struct FaceDebugView: View {
     @ObservedObject var model: FaceDebugModel
-    private let accent = Color(red: 0.64, green: 0.52, blue: 1)
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
+            previewPanel
+            FaceReferencePanel(model: model, store: model.referenceStore)
+            details
+        }
+    }
+
+    private var previewPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Анализ лица").font(.system(size: 25, weight: .bold))
-                    Text("Сравнение с твоими эталонами на Mac")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                WorkspaceHeading("Фото и разметка")
+                Spacer()
+                if model.busy { ProgressView().controlSize(.small) }
+                else if model.watching {
+                    Label("Наблюдение", systemImage: "eye").foregroundStyle(WorkspaceStyle.accent)
                 }
-                Spacer()
-                if model.watching || model.busy { ProgressView().controlSize(.small) }
             }
-            HStack {
-                Button("Открыть фото", systemImage: "photo") { model.openPhoto() }.disabled(model.busy)
-                Button(model.region == nil ? "Выделить фото на экране" : "Выделить заново", systemImage: "viewfinder") { model.chooseRegion() }.disabled(model.busy)
-                Spacer()
-                if model.watching || model.busy { Button("Стоп") { model.stop(); model.status = "Наблюдение остановлено" } }
-                else { Button("Наблюдать", systemImage: "eye") { model.watch() }.disabled(model.region == nil) }
-            }.buttonStyle(.bordered)
-            Text(model.status).font(.system(size: 14, weight: .medium)).foregroundStyle(accent)
-            Text("Область работает поверх любого приложения. После выделения наблюдение начнётся само. Для выбора без основного окна используй значок VoicePick в строке меню.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button(model.region == nil ? "Выделить область экрана" : "Выделить область заново", systemImage: "viewfinder") {
+                    model.chooseRegion()
+                }.disabled(model.busy)
+                if !model.watching && model.region != nil {
+                    Button("Продолжить наблюдение", systemImage: "eye") { model.watch() }.disabled(model.busy)
+                }
+            }.buttonStyle(WorkspaceButtonStyle())
             if let result = model.result {
+                FacePreview(result: result, selected: model.selected, showsLandmarks: model.showsLandmarks)
+                    .frame(height: 300)
+                    .background(WorkspaceStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel("Фото с разметкой лица")
                 Toggle("Показать карту лица", isOn: $model.showsLandmarks).toggleStyle(.switch)
-                if let issue = result.meshIssue { Text(issue).font(.system(size: 12)).foregroundStyle(.orange) }
-                FacePreview(result: result, selected: model.selected, showsLandmarks: model.showsLandmarks).frame(height: 300)
-                    .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 14))
+                if let issue = result.meshIssue { Text(issue).font(.footnote).foregroundStyle(.orange) }
                 if result.faces.count > 1 {
-                    HStack {
-                        Text("Разобрать:")
-                        ForEach(result.faces) { face in
-                            Button("Лицо \(face.id + 1)") { model.selectFace(face.id) }
-                                .tint(model.selected == face.id ? accent : .gray)
+                    ScrollView(.horizontal) {
+                        HStack {
+                            ForEach(result.faces) { face in
+                                Button("Лицо \(face.id + 1)") { model.selectFace(face.id) }
+                                    .buttonStyle(WorkspaceButtonStyle(model.selected == face.id ? .selected : .secondary))
+                                    .accessibilityAddTraits(model.selected == face.id ? .isSelected : [])
+                            }
                         }
-                    }.buttonStyle(.bordered)
+                    }
                 }
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "face.smiling").font(.system(size: 42)).foregroundStyle(accent)
-                    Text("Здесь появятся фото и разметка лица").foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity).frame(height: 210).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+                    Image(systemName: "person.crop.rectangle")
+                        .font(.system(size: 32, weight: .light)).foregroundStyle(WorkspaceStyle.accent)
+                        .accessibilityHidden(true)
+                    Text("Карта лица появится после анализа").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity).frame(height: 140)
+                .background(WorkspaceStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
             }
-            FaceReferencePanel(model: model, store: model.referenceStore)
             if let face = model.face {
                 HStack {
-                    Text(face.mesh == nil ? "Приблизительная разметка Vision · \(face.points.count) точек" : "Карта лица · \(face.points.count) точек · MediaPipe").foregroundStyle(.secondary)
+                    Text(face.mesh == nil ? "Разметка Vision · \(face.points.count) точек" : "Карта MediaPipe · \(face.points.count) точек")
+                        .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Сохранить разбор") { model.saveReport() }.buttonStyle(.bordered)
+                    Button("Сохранить разбор", systemImage: "square.and.arrow.down") { model.saveReport() }
+                        .buttonStyle(WorkspaceButtonStyle())
                 }
+            }
+        }.workspacePanel()
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let face = model.face {
                 DisclosureGroup("Геометрия · диагностика") {
                     Text("Эти условные измерения не определяют категорию. Исключения ниже меняют только геометрический разбор.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -317,10 +338,11 @@ struct FaceDebugView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 8)
             }
             HStack {
-                Button("Разрешить экран") { model.allowScreen() }.buttonStyle(.bordered)
-                Text("Нужно для анализа выбранной области экрана.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Для наблюдения нужна запись экрана.").font(.footnote).foregroundStyle(.secondary)
+                Spacer()
+                Button("Разрешить запись экрана") { model.allowScreen() }.buttonStyle(WorkspaceButtonStyle())
             }
-        }
+        }.workspacePanel()
     }
 }
 
@@ -330,10 +352,11 @@ private struct FaceReferencePanel: View {
     private var references: [FaceReference] { store.references.filter { $0.kind == model.kind } }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            WorkspaceHeading("Сравнение с эталонами")
             Picker("Тип изображения", selection: $model.kind) {
                 ForEach(ReferenceKind.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented).onChange(of: model.kind) { model.compare() }
-                .disabled(model.busy)
+                .frame(maxWidth: 350, alignment: .leading).disabled(model.busy)
             Text("Эталонов: \(references.count) · категории: \(Set(references.map(\.tier)).count) из 7")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             if let problem = store.problem { Text(problem).foregroundStyle(.orange) }
@@ -351,7 +374,7 @@ private struct FaceReferencePanel: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Text(match.category?.rawValue ?? match.nearest.first?.tier.rawValue ?? "Нет эталонов")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold))
                 Text(match.explanation).font(.system(size: 13))
                 if !match.nearest.isEmpty {
                     Text("Ближайшие примеры").fontWeight(.semibold)
@@ -376,7 +399,7 @@ private struct FaceReferencePanel: View {
                         ForEach(FaceTier.allCases) { Text($0.rawValue).tag($0) }
                     }.frame(maxWidth: 280)
                     Button("Добавить эталон") { model.addReference() }
-                        .disabled(model.busy || model.matching || model.watching).buttonStyle(.bordered)
+                        .disabled(model.busy || model.matching || model.watching).buttonStyle(WorkspaceButtonStyle())
                 }
                 Text("Добавляется только выбранное лицо в базу «\(model.kind.title)» с твоей меткой.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -403,7 +426,7 @@ private struct FaceReferencePanel: View {
                         .disabled(model.busy || model.watching)
                 }
             }
-        }.padding(16).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+        }.workspacePanel()
     }
 }
 
@@ -434,7 +457,7 @@ private struct FacePreview: View {
                     guard showsLandmarks else { return }
                     context.clip(to: Path(CGRect(x: offset.x, y: offset.y, width: width * scale, height: height * scale)))
                     for face in result.faces {
-                        let color = face.mesh == nil ? Color.orange : (selected == face.id ? Color.mint : Color.purple)
+                        let color = face.mesh == nil ? Color.orange : (selected == face.id ? Color.mint : WorkspaceStyle.accent)
                         let bounds = face.mesh?.bounds ?? face.box
                         let box = CGRect(x: offset.x + bounds.minX * scale, y: offset.y + (height - bounds.maxY) * scale,
                                          width: bounds.width * scale, height: bounds.height * scale)

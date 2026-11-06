@@ -14,7 +14,7 @@ struct VoicePickApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .stopVoicePick)) { _ in model.stop() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
         }
-        .defaultSize(width: 820, height: 860)
+        .defaultSize(width: 980, height: 710)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -50,238 +50,322 @@ struct MainView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var faceDebug: FaceDebugModel
     @State private var showsFaceDebug = false
-    private let accent = Color(red: 0.64, green: 0.52, blue: 1)
-    private let mint = Color(red: 0.40, green: 0.91, blue: 0.73)
     private var busy: Bool { model.running || model.preparing }
+    private var isVoice: Bool { model.settings.mode == .voice }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+            VStack(spacing: 0) {
                 header
-                HStack {
-                    Button("Голосование вводом") { faceDebug.stop(); showsFaceDebug = false }
-                        .tint(showsFaceDebug ? .gray : accent)
-                    Button("Анализ лица") { model.stop(); showsFaceDebug = true }
-                        .tint(showsFaceDebug ? accent : .gray)
-                }.buttonStyle(.bordered)
-                if showsFaceDebug {
-                    FaceDebugView(model: faceDebug)
-                } else {
-                HStack(spacing: 12) {
-                    modeCard(.voice, title: "Голос", icon: "waveform", detail: "Сказал → ввёл в выбранное поле")
-                    modeCard(.random, title: "Рандомайзер", icon: "dice", detail: "Новая карточка → черновик")
-                }.disabled(busy)
-                HStack {
-                    Text("ОТВЕТ").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
-                    Picker("Формат ответа", selection: $model.settings.inputKind) {
-                        ForEach(InputKind.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented).labelsHidden().frame(width: 330).disabled(busy)
-                    Spacer()
-                    Text(model.settings.mode == .voice && model.settings.sendReturn ? "Enter автоматически" : "Enter вручную")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(model.settings.mode == .voice ? accent : mint)
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if showsFaceDebug {
+                            FaceDebugView(model: faceDebug)
+                        } else {
+                            responseSettings
+                            calibration
+                            permissions
+                            if !model.entries.isEmpty { history }
+                        }
+                    }
+                    .frame(maxWidth: 860)
+                    .padding(24)
+                    .frame(maxWidth: .infinity)
                 }
-                configuration
-                calibration
-                control
-                permissions
-                if !model.entries.isEmpty { history }
-                }
-                Text("v1.4.0 · macOS · Ctrl+Option+S: стоп")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            }.padding(28)
+            }
+            .background(WorkspaceStyle.canvas)
         }
-        .background(Color(red: 0.065, green: 0.073, blue: 0.10))
-        .frame(minWidth: 760, minHeight: 730)
+        .font(.system(size: 13))
+        .tint(WorkspaceStyle.accent)
+        .frame(minWidth: 830, minHeight: 560)
         .onReceive(NotificationCenter.default.publisher(for: .stopVoicePick)) { _ in faceDebug.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in faceDebug.stop() }
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 10) {
-                    Image(systemName: "waveform.circle.fill").foregroundStyle(accent)
-                    Text("VoicePick")
-                }.font(.system(size: 34, weight: .heavy, design: .rounded))
-                Text(showsFaceDebug ? "Локальное сравнение лиц с твоими эталонами." : "Числа и реакции голосом в выбранное поле.").font(.system(size: 14)).foregroundStyle(.secondary)
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(WorkspaceStyle.accent)
+                    .frame(width: 36, height: 36)
+                    .background(WorkspaceStyle.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+                Text("VoicePick").font(.system(size: 18, weight: .semibold))
+            }
+            VStack(spacing: 4) {
+                navigationButton("Голос", icon: "mic", selected: !showsFaceDebug && isVoice) {
+                    showInput(.voice)
+                }.disabled(busy && !isVoice)
+                navigationButton("Рандомайзер", icon: "dice", selected: !showsFaceDebug && !isVoice) {
+                    showInput(.random)
+                }.disabled(busy && isVoice)
+                navigationButton("Анализ лица", icon: "viewfinder", selected: showsFaceDebug) {
+                    guard !showsFaceDebug else { return }
+                    if busy { model.stop() }
+                    showsFaceDebug = true
+                }
             }
             Spacer()
-            HStack(spacing: 7) {
-                Circle().fill((showsFaceDebug ? faceDebug.watching : model.running) ? mint : Color.gray).frame(width: 7, height: 7)
-                Text(showsFaceDebug ? (faceDebug.watching ? "Наблюдаю" : faceDebug.busy ? "Анализ" : "На паузе") : (model.running ? "Работает" : model.preparing ? "Подготовка" : "На паузе")).font(.system(size: 12, weight: .medium))
-            }.padding(.horizontal, 13).padding(.vertical, 8).background(.white.opacity(0.05), in: Capsule())
-        }
-    }
-
-    private func modeCard(_ mode: RunMode, title: String, icon: String, detail: String) -> some View {
-        Button { model.settings.mode = mode } label: {
-            VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 8) {
+                Divider()
                 HStack {
-                    Image(systemName: icon).font(.system(size: 24)).foregroundStyle(model.settings.mode == mode ? accent : .secondary)
-                    Spacer()
-                    Image(systemName: model.settings.mode == mode ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(model.settings.mode == mode ? accent : .secondary)
+                    Text("Остановить")
+                    Spacer(minLength: 4)
+                    Text("⌃⌥S").font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 5).padding(.vertical, 3)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
                 }
-                Text(title).font(.system(size: 20, weight: .semibold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
-                .background(model.settings.mode == mode ? accent.opacity(0.12) : Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(model.settings.mode == mode ? accent.opacity(0.75) : Color.white.opacity(0.08)))
-        }.buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Остановить: Control Option S")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 20)
+        .frame(width: 176)
+        .frame(maxHeight: .infinity)
+        .background(WorkspaceStyle.sidebar)
     }
 
-    private var configuration: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if model.settings.mode == .voice {
-                Toggle("Нажимать Enter после голосового ввода", isOn: $model.settings.sendReturn)
-                Text("Включай для полей, которые отправляют ответ и очищаются после Enter. Для форм можно оставить только ввод.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+    private func showInput(_ mode: RunMode) {
+        if showsFaceDebug { faceDebug.stop() }
+        if model.settings.mode != mode { model.settings.mode = mode }
+        showsFaceDebug = false
+    }
+
+    private func navigationButton(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label {
+                Text(title).frame(maxWidth: .infinity, alignment: .leading)
+            } icon: {
+                Image(systemName: icon).frame(width: 17)
             }
-            if model.settings.inputKind == .rating {
-                if model.settings.mode == .voice {
-                    Text("Говори число от 1 до 10 в любой части предложения.").font(.system(size: 14))
-                    Text("Например: «Поставь пять, идём дальше». Через 0,35 с число вводится в поле. Enter зависит от переключателя выше. «Стоп» и «пауза» останавливают ввод.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                } else {
-                    HStack {
-                        Text("Диапазон оценок").font(.system(size: 14, weight: .medium))
-                        Spacer()
-                        Stepper("От \(model.settings.minimum)", value: $model.settings.minimum, in: 1...model.settings.maximum).frame(width: 120)
-                        Stepper("До \(model.settings.maximum)", value: $model.settings.maximum, in: model.settings.minimum...10).frame(width: 120)
+        }
+        .buttonStyle(WorkspaceButtonStyle(selected ? .selected : .navigation))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(showsFaceDebug ? "Анализ лица" : isVoice ? "Голосовой ввод" : "Рандомайзер")
+                    .font(.system(size: 28, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    let active = showsFaceDebug ? faceDebug.watching || faceDebug.busy : busy
+                    Image(systemName: "circle.fill").font(.system(size: 6))
+                        .foregroundStyle(active ? WorkspaceStyle.accent : .secondary)
+                        .accessibilityHidden(true)
+                    Text(showsFaceDebug ? faceDebug.status : model.status)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !showsFaceDebug && model.running && isVoice {
+                    Text(model.heard).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .accessibilityLabel("Распознано: \(model.heard)")
+                }
+            }
+            Spacer(minLength: 0)
+            if showsFaceDebug {
+                if faceDebug.busy || faceDebug.watching {
+                    HStack(spacing: 8) {
+                        if !faceDebug.busy {
+                            Button("Открыть фото", systemImage: "photo") { faceDebug.openPhoto() }
+                                .buttonStyle(WorkspaceButtonStyle())
+                        }
+                        Button("Остановить", systemImage: "stop.fill") { faceDebug.stop() }
+                            .buttonStyle(WorkspaceButtonStyle(.stop))
                     }
-                    Text("Равномерный случайный выбор. Проверяешь оценку и сам нажимаешь Enter.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                } else {
+                    Button("Открыть фото", systemImage: "photo") { faceDebug.openPhoto() }
+                        .buttonStyle(WorkspaceButtonStyle(.primary))
                 }
             } else {
-                HStack {
-                    Text("Лайк").font(.system(size: 13)); TextField("❤️", text: $model.settings.likeEmoji).textFieldStyle(.roundedBorder).frame(width: 85)
-                    Text("Дизлайк").font(.system(size: 13)).padding(.leading, 16)
-                    TextField("👎", text: $model.settings.dislikeEmoji).textFieldStyle(.roundedBorder).frame(width: 85)
-                    Spacer()
+                Button(busy ? "Остановить" : "Запустить", systemImage: busy ? "stop.fill" : "play.fill") {
+                    if busy { model.stop() } else { model.start() }
+                }.buttonStyle(WorkspaceButtonStyle(busy ? .stop : .primary))
+            }
+        }
+        .frame(maxWidth: 860, alignment: .leading)
+        .padding(.horizontal, 24).padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var responseSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WorkspaceHeading("Формат ответа")
+            Picker("Формат ответа", selection: $model.settings.inputKind) {
+                ForEach(InputKind.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .frame(maxWidth: 350, alignment: .leading)
+
+            if model.settings.inputKind == .reaction {
+                HStack(spacing: 12) {
+                    reactionField("Лайк", text: $model.settings.likeEmoji, placeholder: "❤️")
+                    reactionField("Дизлайк", text: $model.settings.dislikeEmoji, placeholder: "👎")
                 }
-                if model.settings.mode == .random {
-                    HStack {
-                        Text("Вероятность лайка").font(.system(size: 13))
-                        Slider(value: Binding(get: { Double(model.settings.likePercent) }, set: { model.settings.likePercent = Int($0) }), in: 0...100, step: 5)
-                        Text("\(model.settings.likePercent)%").monospacedDigit().frame(width: 45)
+                .textFieldStyle(.roundedBorder)
+                Text("Задай эмодзи, слово или короткий текст для каждой команды.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            if isVoice {
+                Toggle("Нажимать Enter после ввода", isOn: $model.settings.sendReturn)
+                    .toggleStyle(.switch)
+                Text(model.settings.inputKind == .rating
+                     ? "Скажи «поставь пять». VoicePick найдёт число в любой части фразы."
+                     : "Скажи «лайк», «дизлайк» или «не нравится» в любой части фразы.")
+                    .foregroundStyle(.secondary)
+                if !model.localVoice {
+                    Text("Для распознавания через Apple может понадобиться интернет.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } else {
+                if model.settings.inputKind == .rating {
+                    HStack(spacing: 20) {
+                        Text("Диапазон оценок")
+                        Spacer()
+                        Stepper("От \(model.settings.minimum)", value: $model.settings.minimum, in: 1...model.settings.maximum)
+                        Stepper("До \(model.settings.maximum)", value: $model.settings.maximum, in: model.settings.minimum...10)
                     }
                 } else {
-                    Text("«Лайк» / «нравится» → лайк. «Дизлайк» / «не нравится» / «пропуск» → дизлайк. Команда срабатывает внутри фразы через 0,35 с.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    HStack(spacing: 14) {
+                        Text("Вероятность лайка")
+                        Slider(value: Binding(get: { Double(model.settings.likePercent) },
+                                              set: { model.settings.likePercent = Int($0) }), in: 0...100, step: 5)
+                            .accessibilityLabel("Вероятность лайка")
+                        Text("\(model.settings.likePercent)%").monospacedDigit().frame(width: 42, alignment: .trailing)
+                    }
                 }
-                Text("Задай два ответа: эмодзи, слова или короткий текст. Они вводятся в выбранное поле.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("VoicePick подставит ответ. Проверь его и нажми Enter.")
+                    .foregroundStyle(.secondary)
             }
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14)).disabled(busy)
+        }
+        .workspacePanel()
+        .disabled(busy)
+    }
+
+    private func reactionField(_ title: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.footnote).foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField(title, text: text, prompt: Text(placeholder))
+                .accessibilityLabel(title)
+        }
     }
 
     private var calibration: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Куда вводить ответ").font(.system(size: 15, weight: .semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                WorkspaceHeading("Куда вводить")
                 Spacer()
-                Text(model.targetName).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(model.targetName).font(.footnote).foregroundStyle(.secondary)
             }
-            HStack(spacing: 12) {
-                Button { model.calibrate(point: true) } label: {
-                    Label(model.calibration.input == nil ? "Указать поле ввода" : "Поле ввода ✓", systemImage: "cursorarrow.click")
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
-                }.disabled(busy)
-                if model.settings.mode == .random {
-                    Button { model.calibrate(point: false) } label: {
-                        Label(model.calibration.region == nil ? "Выделить карточку" : "Область карточки ✓", systemImage: "viewfinder")
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }.disabled(busy)
+            HStack(spacing: 10) {
+                Button(model.calibration.input == nil ? "Указать поле ввода" : "Выбрать поле заново",
+                       systemImage: model.calibration.input == nil ? "cursorarrow.click" : "checkmark.circle") {
+                    model.calibrate(point: true)
                 }
-            }
-            Text("После нажатия у тебя 4 секунды, чтобы открыть нужное приложение. Выбери пустое поле мышкой. Привязка следует за перемещением окна; после изменения размера выбери поле заново.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Проверить выбранное окно") { model.checkTarget() }.disabled(busy).font(.system(size: 12))
-            if model.settings.mode == .voice {
-                DisclosureGroup("Проверка ввода") {
-                    Text("Открой выбранное приложение. Тест вставит ответ через 4 секунды. Enter зависит от переключателя в настройках.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                    Button("Тест ввода: \(model.testMessage)") { model.testVoiceInput() }
-                        .disabled(busy).font(.system(size: 12))
-                }.font(.system(size: 12))
-            }
-            if model.settings.mode == .random {
-                DisclosureGroup("Проверка области и чувствительность") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let preview = model.preview {
-                            Image(nsImage: preview).resizable().scaledToFit().frame(maxHeight: 180)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else { Text("Предпросмотр появится после запуска.").font(.system(size: 12)).foregroundStyle(.secondary) }
-                        HStack {
-                            Text("Порог изменения").font(.system(size: 12))
-                            Slider(value: $model.settings.sensitivity, in: 0.04...0.20, step: 0.01).disabled(busy)
-                            Text(String(format: "%.0f%%", model.settings.sensitivity * 100)).frame(width: 45)
-                        }
-                        Text("Уменьши порог, чтобы замечать небольшие изменения. Увеличь, чтобы уменьшить число ложных срабатываний. Выделяй одну карточку или область с меняющимся содержимым, без кнопок и поля ввода.")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }.padding(.top, 10)
-                }.font(.system(size: 12))
-            }
-        }.padding(18).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var control: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(model.status).font(.system(size: 14, weight: .medium)).fixedSize(horizontal: false, vertical: true)
-                    if model.settings.mode == .voice {
-                        Text("Распознано: \(model.heard)").font(.system(size: 12)).foregroundStyle(.secondary)
-                    } else {
-                        Text("Последний выбор: \(model.lastChoice)").font(.system(size: 12)).foregroundStyle(.secondary)
+                if !isVoice {
+                    Button(model.calibration.region == nil ? "Выделить карточку" : "Выделить карточку заново",
+                           systemImage: model.calibration.region == nil ? "viewfinder" : "checkmark.circle") {
+                        model.calibrate(point: false)
                     }
                 }
-                Spacer(minLength: 12)
-                Button { if busy { model.stop() } else { model.start() } } label: {
-                    Label(busy ? "Стоп" : "Запустить", systemImage: busy ? "stop.fill" : "play.fill")
-                        .font(.system(size: 14, weight: .semibold)).padding(.horizontal, 20).padding(.vertical, 13)
-                        .background(busy ? Color.red.opacity(0.8) : accent, in: RoundedRectangle(cornerRadius: 11))
-                        .foregroundStyle(.white)
-                }.buttonStyle(.plain)
             }
-            if model.settings.mode == .random {
-                Label("Enter нажимаешь ты. После Enter ждём изменение карточки.", systemImage: "keyboard")
-                    .font(.system(size: 12)).foregroundStyle(mint)
+            .buttonStyle(WorkspaceButtonStyle())
+            .disabled(busy)
+            Text(isVoice
+                 ? "После нажатия открой нужное окно за 4 секунды и кликни в пустое поле."
+                 : "Укажи пустое поле и обведи карточку в том же окне, без кнопок и поля ввода.")
+                .foregroundStyle(.secondary)
+            DisclosureGroup(isVoice ? "Проверка ввода" : "Проверка окна и чувствительность") {
+                calibrationTools.padding(.top, 12)
+            }
+        }.workspacePanel()
+    }
+
+    private var calibrationTools: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("После изменения размера окна настрой привязку заново.")
+                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button("Проверить окно") { model.checkTarget() }
+                if isVoice {
+                    Button("Ввести \(model.testMessage)") { model.testVoiceInput() }
+                }
+            }.buttonStyle(WorkspaceButtonStyle()).disabled(busy)
+            if isVoice {
+                Text("Тест вставит ответ через 4 секунды. Enter зависит от переключателя выше.")
+                    .foregroundStyle(.secondary)
             } else {
-                Text(model.localVoice ? "Речь распознаётся на устройстве, если язык доступен в macOS." : "Речь распознаётся сервисом Apple; может понадобиться интернет.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                HStack {
+                    Text("Порог изменения")
+                    Slider(value: $model.settings.sensitivity, in: 0.04...0.20, step: 0.01).disabled(busy)
+                        .accessibilityLabel("Порог изменения")
+                    Text(model.settings.sensitivity, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit().frame(width: 42, alignment: .trailing)
+                }
+                Text("Меньший порог помогает замечать небольшие изменения карточки.")
+                    .foregroundStyle(.secondary)
+                if let preview = model.preview {
+                    Image(nsImage: preview).resizable().scaledToFit().frame(maxHeight: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityLabel("Выбранная область карточки")
+                }
             }
-        }.padding(18).background(accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        }
     }
 
     private var permissions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-          HStack(spacing: 16) {
-            Label("Доступы macOS", systemImage: "lock.shield").font(.system(size: 12)).foregroundStyle(.secondary)
-            Spacer()
-            Button(model.accessibility ? "Управление ✓" : "Разрешить управление") { model.allowAccessibility() }
-            if model.settings.mode == .random {
-                Button(model.screenAccess ? "Экран ✓" : "Разрешить экран") { model.allowScreen() }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                Label("Доступы macOS", systemImage: "lock.shield").fontWeight(.medium)
+                Spacer()
+                if !model.accessibility {
+                    Button("Разрешить управление") { model.allowAccessibility() }
+                } else {
+                    Label("Управление разрешено", systemImage: "checkmark").foregroundStyle(.secondary)
+                }
+                if !isVoice {
+                    if model.screenAccess {
+                        Label("Экран разрешён", systemImage: "checkmark").foregroundStyle(.secondary)
+                    } else {
+                        Button("Разрешить запись экрана") { model.allowScreen() }
+                    }
+                }
+            }.buttonStyle(WorkspaceButtonStyle())
+            if !model.accessibility {
+                DisclosureGroup("Доступ уже включён") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Перезапусти VoicePick. Если доступ не появится, заново добавь текущую сборку в список «Универсальный доступ» в настройках macOS.")
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Button("Проверить доступ") { model.refreshPermissions() }
+                            Button("Перезапустить") { model.restartApp() }
+                        }.buttonStyle(WorkspaceButtonStyle())
+                    }.padding(.top, 10)
+                }
             }
-          }
-          if !model.accessibility {
-              Text("Тумблер уже включён? Перезапусти приложение. Если не помогло: удали только VoicePick (или прежнюю запись «ББ ДВ») из списка Универсального доступа кнопкой −, добавь текущую сборку через + и включи доступ снова.")
-                  .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-              HStack {
-                  Button("Проверить доступ") { model.refreshPermissions() }
-                  Button("Перезапустить") { model.restartApp() }
-              }
-          }
-        }.font(.system(size: 11))
+        }.workspacePanel()
     }
 
     private var history: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Последние действия").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            ForEach(Array(model.entries.enumerated()), id: \.offset) { _, entry in
-                Text(entry).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-            }
-        }
+        DisclosureGroup("Последние действия") {
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Array(model.entries.enumerated()), id: \.offset) { _, entry in
+                    Text(entry).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                }
+            }.padding(.top, 12)
+        }.workspacePanel()
     }
 }
