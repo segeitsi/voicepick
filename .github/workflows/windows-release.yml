@@ -1,0 +1,52 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "windows-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Build standalone executable
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Python (Get-Command python.exe).Source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoicePick-Windows-x64
+          path: build/windows-dist/VoicePick.exe*
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: VoicePick-Windows-x64
+          path: release
+      - name: Publish Windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/VoicePick.exe release/VoicePick.exe.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "VoicePick for Windows · $RELEASE_TAG" \
+            --notes "Скачай VoicePick.exe и запусти его на Windows 10/11 x64. Модели речи и анализа лица уже внутри."
