@@ -352,8 +352,14 @@ class VoicePick:
     def select(self, purpose):
         self.stop(quiet=True)
         token = self.generation
+        window_state = None
+
+        def restore_window():
+            if window_state is not None:
+                self.root.state(window_state)
 
         def countdown(seconds):
+            nonlocal window_state
             if token != self.generation:
                 return
             if seconds:
@@ -363,11 +369,12 @@ class VoicePick:
             try:
                 target = None if purpose == "face" else desktop.Target.current()
                 title = {"face": "Обведи область экрана", "field": "Кликни в поле ввода", "card": "Обведи карточку"}[purpose]
+                window_state = self.root.state()
                 self.root.withdraw()
                 self.picker = RegionPicker(self.root, purpose == "field", title,
                                            lambda selection: selected(target, selection))
             except Exception as error:
-                self.root.deiconify()
+                restore_window()
                 self.status.set(str(error))
 
         def selected(target, selection):
@@ -377,14 +384,14 @@ class VoicePick:
                     self.status.set("Выбор отменён")
                 elif purpose == "face":
                     self.face_region = selection
-                    self.root.deiconify()
+                    restore_window()
                     self.start_watch()
                     return
                 else:
                     self.save_target(target, purpose, selection)
             except Exception as error:
                 self.status.set(str(error))
-            self.root.deiconify()
+            restore_window()
 
         countdown(4)
 
@@ -556,14 +563,14 @@ class VoicePick:
                     self.face_result = value
                     self.face_index.set("1")
                     count = len(value[1]["faces"])
-                    self.status.set(f"Лиц на изображении: {count}" if count else "Лица не найдены")
+                    if self.watched is None or not self.watch_blocked:
+                        self.status.set(f"Лиц на изображении: {count}" if count else "Лица не найдены")
                     self.update_preview()
         self.root.after(45, self.poll_events)
 
     def fail(self, error):
         self.stop(quiet=True)
         self.status.set(str(error))
-        self.root.deiconify()
 
     def stop(self, quiet=False):
         self.generation += 1
@@ -576,7 +583,6 @@ class VoicePick:
             picker.finish(None)
         if not quiet:
             self.status.set("Остановлено")
-            self.root.deiconify()
 
     def render_faces(self):
         preview = self.panel("Фото и разметка")
@@ -648,15 +654,21 @@ class VoicePick:
         self.stop(quiet=True)
         self.watched = self.face_region
         self.watch_frame = self.watch_candidate = None
+        self.watch_blocked = False
         self.status.set("Наблюдаю за областью экрана")
-        self.root.iconify()
         self.watch_tick(self.generation)
 
     def watch_tick(self, token):
         if token != self.generation or self.watched is None:
             return
         try:
-            if not self.face_pending and not self.covers_region(self.watched):
+            blocked = self.covers_region(self.watched)
+            if blocked != self.watch_blocked:
+                self.watch_blocked = blocked
+                self.watch_candidate = None
+                self.status.set("Окно VoicePick перекрывает область. Передвинь или сверни его."
+                                if blocked else "Наблюдаю за областью экрана")
+            if not blocked and not self.face_pending:
                 image = desktop.capture(self.watched)
                 frame = fingerprint(image)
                 changed = self.watch_frame is None or distance(frame, self.watch_frame) >= 0.04
