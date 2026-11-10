@@ -8,7 +8,7 @@ xcrun swiftc -swift-version 5 -O -parse-as-library -target arm64-apple-macosx15.
   -module-cache-path build/module-cache Sources/*.swift \
   -o "$app/Contents/MacOS/VoicePick"
 cp assets/Info.plist "$app/Contents/Info.plist"
-if [[ -f assets/drawing-references.json ]]; then
+if [[ "${BBDV_BUNDLE_LOCAL_REFERENCES:-1}" != 0 && -f assets/drawing-references.json ]]; then
   cp assets/drawing-references.json "$app/Contents/Resources/drawing-references.json"
 else
   rm -f "$app/Contents/Resources/drawing-references.json"

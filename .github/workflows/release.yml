@@ -1,0 +1,102 @@
+name: VoicePick release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Build standalone executable
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Python (Get-Command python.exe).Source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoicePick-Windows-x64
+          path: build/windows-dist/VoicePick.exe*
+          if-no-files-found: error
+          compression-level: 0
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Build and archive the macOS app
+        env:
+          BBDV_BUNDLE_LOCAL_REFERENCES: "0"
+        run: |
+          bash scripts/build.sh
+          app=build/VoicePick.app
+          test ! -e "$app/Contents/Resources/drawing-references.json"
+          mkdir -p build/macos-dist
+          ditto -c -k --keepParent "$app" build/macos-dist/VoicePick-macOS-arm64.zip
+          ditto -x -k build/macos-dist/VoicePick-macOS-arm64.zip build/macos-archive-check
+          codesign --verify --deep --strict build/macos-archive-check/VoicePick.app
+          cd build/macos-dist
+          shasum -a 256 VoicePick-macOS-arm64.zip > VoicePick-macOS-arm64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoicePick-macOS-arm64
+          path: build/macos-dist/VoicePick-macOS-arm64.zip*
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VoicePick-*
+          path: release
+          merge-multiple: true
+      - name: Publish both builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          cd release
+          tr -d '\r' < VoicePick.exe.sha256 | sha256sum --check -
+          sha256sum --check VoicePick-macOS-arm64.zip.sha256
+          cat > notes.md <<'EOF'
+          - **Windows 10/11 x64.** Скачай и запусти `VoicePick.exe`.
+          - **macOS 15.2+ на Apple Silicon.** Распакуй `VoicePick-macOS-arm64.zip` и открой `VoicePick.app`.
+
+          Модели уже внутри. В обеих сборках база эталонов пустая. Сборка для Mac имеет локальную подпись без нотарификации Apple.
+          EOF
+          gh release create "$RELEASE_TAG" VoicePick.exe VoicePick.exe.sha256 \
+            VoicePick-macOS-arm64.zip VoicePick-macOS-arm64.zip.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "VoicePick $RELEASE_TAG" --notes-file notes.md

@@ -6,8 +6,8 @@
   <key>CFBundleName</key><string>VoicePick</string>
   <key>CFBundleDisplayName</key><string>VoicePick</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.4.0</string>
-  <key>CFBundleVersion</key><string>18</string>
+  <key>CFBundleShortVersionString</key><string>1.4.1</string>
+  <key>CFBundleVersion</key><string>19</string>
   <key>LSMinimumSystemVersion</key><string>15.2</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Микрофон нужен для голосовых оценок и команд лайк/дизлайк.</string>

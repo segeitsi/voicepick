@@ -27,4 +27,4 @@
 powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
 ```
 
-Готовый файл появится в `build/windows-dist/VoicePick.exe`. Сборка скачивает модели Vosk и MediaPipe и сверяет их SHA-256. GitHub Actions запускает ту же сборку для тегов `windows-v*` и прикрепляет файл и его контрольную сумму к релизу.
+Готовый файл появится в `build/windows-dist/VoicePick.exe`. Сборка скачивает модели Vosk и MediaPipe и сверяет их SHA-256. По тегам `v*` GitHub Actions собирает Windows и macOS и публикует обе версии в одном релизе.

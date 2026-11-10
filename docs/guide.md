@@ -4,7 +4,7 @@ VoicePick вводит короткие ответы в выбранное те�
 
 В отдельной вкладке можно открыть фото или выделить фрагмент экрана для сравнения лица с локальными эталонами.
 
-Версия 1.4.0. Apple Silicon, macOS 15.2+, SwiftUI / AppKit.
+Apple Silicon, macOS 15.2+, SwiftUI / AppKit.
 
 | Режим | Что делает |
 | --- | --- |
@@ -19,7 +19,9 @@ Enter настраивается отдельно. В новом профиле 
 
 ## Сборка и запуск
 
-Понадобятся Mac с Apple Silicon, macOS 15.2 или новее, Command Line Tools и **Python 3.12**. Python нужен только для сборки локального детектора: в готовое приложение он упаковывается вместе с зависимостями.
+Скачай [готовый архив](https://github.com/segeitsi/voicepick/releases/latest/download/VoicePick-macOS-arm64.zip), распакуй его и открой `VoicePick.app`. Приложение имеет локальную подпись без нотарификации Apple, поэтому macOS может запросить подтверждение при первом открытии. [Инструкция Apple](https://support.apple.com/en-us/102445)
+
+Для сборки из исходников понадобятся Mac с Apple Silicon, macOS 15.2 или новее, Command Line Tools и **Python 3.12**. В готовое приложение Python упаковывается вместе с зависимостями.
 
 ```sh
 git clone https://github.com/segeitsi/voicepick.git

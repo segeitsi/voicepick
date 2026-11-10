@@ -12,17 +12,7 @@ macOS 15.2+ на Apple Silicon · Windows 10/11 x64
 
 **Windows.** Скачай [VoicePick.exe](https://github.com/segeitsi/voicepick/releases/latest/download/VoicePick.exe) и открой его. [Как пользоваться на Windows](docs/windows.md)
 
-**macOS.** Нужны Command Line Tools и Python 3.12. Первая сборка скачает зависимости и модель MediaPipe.
-
-```sh
-git clone https://github.com/segeitsi/voicepick.git
-cd voicepick
-xcode-select --install  # если ещё не установлены
-bash scripts/build.sh
-open "build/VoicePick.app"
-```
-
-Дальше можно запускать через `Запустить.command`.
+**macOS.** Скачай [архив VoicePick для Apple Silicon](https://github.com/segeitsi/voicepick/releases/latest/download/VoicePick-macOS-arm64.zip), распакуй его и открой `VoicePick.app`. [Разрешения и сборка из исходников](docs/guide.md)
 
 ## Как пользоваться на Mac
 
