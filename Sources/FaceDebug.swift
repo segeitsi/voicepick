@@ -16,6 +16,8 @@ final class FaceDebugModel: ObservableObject {
     @Published var referenceTier: FaceTier = .mtb
     @Published var match: ReferenceMatch?
     @Published var matching = false
+    @Published private(set) var savingReference = false
+    @Published private(set) var referenceNotice: String?
     let referenceStore = FaceReferenceStore()
     private var matchTask: Task<Void, Never>?
     private var matchToken = UUID()
@@ -194,21 +196,24 @@ final class FaceDebugModel: ObservableObject {
     }
 
     func addReference() {
-        guard !busy, !matching, let result, let face else { return }
-        let current = token; let tier = referenceTier; let selectedKind = kind
-        busy = true; status = "Сохраняю эталон…"
-        task = Task {
+        guard !busy, !savingReference, let result, let face else { return }
+        let image = result.image
+        let box = face.box
+        let tier = referenceTier
+        let selectedKind = kind
+        savingReference = true
+        referenceNotice = nil
+        Task {
+            defer { savingReference = false }
             do {
                 let reference = try await Task.detached(priority: .userInitiated) {
-                    try FaceReferenceVision.make(result.image, box: face.box, tier: tier, kind: selectedKind, source: "Добавлен пользователем")
+                    try FaceReferenceVision.make(image, box: box, tier: tier, kind: selectedKind, source: "Добавлен пользователем")
                 }.value
-                guard token == current, !Task.isCancelled else { return }
                 try referenceStore.add(reference)
-                busy = false; task = nil; status = "Эталон \(tier.rawValue) сохранён на Mac"
+                referenceNotice = "Эталон \(tier.rawValue) добавлен"
                 compare()
             } catch {
-                guard token == current else { return }
-                busy = false; task = nil; status = error.localizedDescription
+                referenceNotice = error.localizedDescription
             }
         }
     }
@@ -398,11 +403,14 @@ private struct FaceReferencePanel: View {
                     Picker("Моя категория", selection: $model.referenceTier) {
                         ForEach(FaceTier.allCases) { Text($0.rawValue).tag($0) }
                     }.frame(maxWidth: 280)
-                    Button("Добавить эталон") { model.addReference() }
-                        .disabled(model.busy || model.matching || model.watching).buttonStyle(WorkspaceButtonStyle())
+                    Button(model.savingReference ? "Сохраняю…" : "Добавить эталон") { model.addReference() }
+                        .disabled(model.busy || model.savingReference).buttonStyle(WorkspaceButtonStyle())
                 }
                 Text("Добавляется только выбранное лицо в базу «\(model.kind.title)» с твоей меткой.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            if let notice = model.referenceNotice {
+                Text(notice).font(.footnote).foregroundStyle(.secondary)
             }
             DisclosureGroup("Мои эталоны") {
                 ForEach(FaceTier.allCases) { tier in

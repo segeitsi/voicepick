@@ -747,18 +747,19 @@ class VoicePick:
         label(tile, caption, size=9, color=MUTED).pack()
 
     def add_reference(self):
-        if not self.bank or not self.face_result or not self.face_result[1]["faces"]:
-            self.status.set("Сначала открой фото с лицом")
+        if self.bank is None:
             return
-        if self.watched is not None:
-            self.status.set("Останови наблюдение перед добавлением эталона")
+        if not self.face_result or not self.face_result[1]["faces"]:
+            self.reference_status.set("Дождись кадра с лицом или открой фото.")
             return
         try:
-            self.bank.add(self.current_crop(), self.face_tier.get(), self.image_kind)
-            self.status.set("Эталон добавлен")
+            crop = self.current_crop()
+            tier = self.face_tier.get()
+            self.bank.add(crop, tier, self.image_kind)
             self.update_preview()
+            self.reference_status.set(f"{self.reference_status.get()}\nЭталон {tier} добавлен")
         except (OSError, ValueError) as error:
-            self.status.set(str(error))
+            self.reference_status.set(str(error))
 
     def manage_references(self):
         if self.bank is None:
