@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "windows-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Windows release tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -44,8 +51,9 @@ jobs:
       - name: Publish Windows release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          [[ "$RELEASE_TAG" =~ ^windows-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh release create "$RELEASE_TAG" release/VoicePick.exe release/VoicePick.exe.sha256 \
             --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "VoicePick for Windows · $RELEASE_TAG" \
