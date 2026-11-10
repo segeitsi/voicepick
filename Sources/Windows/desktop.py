@@ -11,7 +11,10 @@ import win32gui
 import win32process
 from PIL import ImageGrab
 from pywinauto import Desktop
+from pywinauto.controls.uiawrapper import UIAWrapper
 from pywinauto.keyboard import send_keys
+from pywinauto.uia_defines import IUIA, NoPatternInterfaceError
+from pywinauto.uia_element_info import UIAElementInfo
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
@@ -107,16 +110,14 @@ def text_field(point, pid):
 
 
 def field_value(field):
-    from pywinauto.uia_defines import NoPatternInterface
-
     try:
         value = field.iface_value
-    except NoPatternInterface:
+    except NoPatternInterfaceError:
         if field.element_info.control_type != "Edit":
             raise ValueError("Это поле не поддерживает проверку ввода.")
         try:
             return field.iface_text.DocumentRange.GetText(-1).rstrip("\r\n")
-        except NoPatternInterface as error:
+        except NoPatternInterfaceError as error:
             raise ValueError("Windows не даёт прочитать это поле.") from error
     if value.CurrentIsReadOnly:
         raise ValueError("Поле доступно только для чтения.")
@@ -186,12 +187,12 @@ class Writer:
         identity = tuple(field.element_info.element.GetRuntimeId())
         if identity != target.element_id:
             raise ValueError("Поле изменилось. Выбери его заново.")
-        field.set_focus()
+        field.element_info.element.SetFocus()
 
         def read():
             if cancelled.is_set() or target.position() is None:
                 raise ValueError("Ввод остановлен: окно сменилось.")
-            active = Desktop(backend="uia").get_active()
+            active = UIAWrapper(UIAElementInfo(IUIA().iuia.GetFocusedElement()))
             if active.element_info != field.element_info:
                 raise ValueError("Ввод остановлен: фокус ушёл из поля.")
             return field_value(active)

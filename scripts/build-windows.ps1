@@ -19,13 +19,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Could not install Windows dependencies." }
     & $buildPython scripts/prepare-windows-models.py
     if ($LASTEXITCODE -ne 0) { throw "Could not prepare the offline models." }
+    $models = (Resolve-Path "build/windows-models").Path
 
     $bundle = @(
         "--noconfirm", "--onefile", "--windowed", "--noupx", "--name", "VoicePick",
         "--manifest", "scripts/voicepick-windows.manifest",
         "--distpath", "build/windows-dist", "--workpath", "build/windows-pyinstaller",
         "--specpath", "build/windows-pyinstaller", "--paths", "assets/face-mesh",
-        "--add-data", "build/windows-models:models",
+        "--add-data", "${models}:models",
         "--collect-all", "mediapipe", "--collect-all", "vosk",
         "--collect-data", "_sounddevice_data",
         "--hidden-import", "pynput.keyboard._win32", "--hidden-import", "pynput.mouse._win32",
