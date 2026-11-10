@@ -36,16 +36,29 @@ struct FaceGeometry {
 /// Debug heuristics, not a model trained on attractiveness ratings.
 /// All targets/tolerances and weights are documented in README.md.
 enum FaceRatingEngine {
+    static func visibilityIssue(_ face: FaceGeometry) -> String? {
+        guard face.width.isFinite, face.height.isFinite, min(face.width, face.height) >= 35, max(face.width, face.height) >= 90 else {
+            return "Лицо слишком маленькое. Выбери фото покрупнее."
+        }
+        let insufficient = "Недостаточно надёжных точек лица. Оценка пропущена."
+        guard face.confidence.isFinite, face.confidence >= 0.3,
+              face.quality.map({ $0.isFinite && $0 >= 0.1 }) ?? true else { return insufficient }
+        func usable(_ name: String, _ points: [CGPoint], minimum: Int) -> Bool {
+            !face.excluded.contains(name) && points.count >= minimum &&
+                points.allSatisfy { $0.x.isFinite && $0.y.isFinite } &&
+                points.contains { $0 != points[0] }
+        }
+        guard usable("leftEye", face.leftEye, minimum: 4) || usable("rightEye", face.rightEye, minimum: 4),
+              usable("nose", face.nose, minimum: 2), usable("lips", face.lips, minimum: 3),
+              usable("contour", face.contour, minimum: 5) else { return insufficient }
+        return nil
+    }
+
     static func evaluate(_ face: FaceGeometry) -> FaceRating {
         func unavailable(_ reason: String) -> FaceRating {
             FaceRating(score: nil, metrics: [], explanation: reason, reason: reason)
         }
-        guard face.width.isFinite, face.height.isFinite, min(face.width, face.height) >= 35, max(face.width, face.height) >= 90 else {
-            return unavailable("Лицо слишком маленькое. Выбери фото покрупнее.")
-        }
-        guard face.confidence.isFinite, face.confidence >= 0.3 else {
-            return unavailable("Лицо видно недостаточно чётко для разбора.")
-        }
+        if let issue = visibilityIssue(face) { return unavailable(issue) }
         guard let yaw = face.yaw, let pitch = face.pitch else {
             return unavailable("Не удалось определить ракурс лица. Попробуй другое фото.")
         }
@@ -53,8 +66,7 @@ enum FaceRatingEngine {
             return unavailable("Слишком сильный наклон вверх/вниз для устойчивого разбора.")
         }
         if min(face.width, face.height) < 90 || abs(yaw) > 20 || abs(pitch) > 18 || !face.excluded.isEmpty ||
-            face.leftEye.count < 4 || face.rightEye.count < 4 || face.contour.count < 9 || face.nose.isEmpty || face.lips.isEmpty ||
-            (face.quality.map { $0 < 0.1 } ?? false) {
+            face.leftEye.count < 4 || face.rightEye.count < 4 || face.contour.count < 9 {
             return partial(face)
         }
         let sets = [face.leftEye, face.rightEye, face.nose, face.lips, face.contour]

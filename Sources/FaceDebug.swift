@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import CryptoKit
 
 @MainActor
 final class FaceDebugModel: ObservableObject {
@@ -18,7 +19,10 @@ final class FaceDebugModel: ObservableObject {
     @Published var matching = false
     @Published private(set) var savingReference = false
     @Published private(set) var referenceNotice: String?
+    @Published private(set) var frameSkipped = false
     let referenceStore = FaceReferenceStore()
+    private var frameKey: String?
+    private var skippedFrames = UserDefaults.standard.stringArray(forKey: "face.skippedFrames.v1") ?? []
     private var matchTask: Task<Void, Never>?
     private var matchToken = UUID()
     private let selector = SelectionOverlay()
@@ -48,14 +52,38 @@ final class FaceDebugModel: ObservableObject {
         return AnalyzedFace(id: detected.id, box: detected.box, points: detected.points,
                             rating: FaceRatingEngine.evaluate(geometry), quality: detected.quality, geometry: geometry, mesh: detected.mesh)
     }
+    var comparisonIssue: String? {
+        guard let result else { return nil }
+        if frameSkipped { return "Кадр пропущен." }
+        if result.faces.isEmpty { return "Лицо не найдено. Оценка пропущена." }
+        guard let face else { return nil }
+        return FaceRatingEngine.visibilityIssue(face.geometry)
+    }
+
+    func toggleFrameSkip() {
+        guard result != nil, let frameKey else { return }
+        if frameSkipped {
+            skippedFrames.removeAll { $0 == frameKey }
+        } else {
+            skippedFrames.append(frameKey)
+            skippedFrames = Array(skippedFrames.suffix(200))
+        }
+        UserDefaults.standard.set(skippedFrames, forKey: "face.skippedFrames.v1")
+        frameSkipped.toggle()
+        status = comparisonIssue ?? "Кадр возвращён к разбору"
+        compare()
+    }
+
     func exclude(_ feature: String, _ value: Bool) {
         if value { excluded.insert(feature) } else { excluded.remove(feature) }
         status = face?.rating.reason ?? "Разбор обновлён по отмеченным зонам"
+        compare()
     }
 
     func resetExclusions() {
         excluded = []
         status = face?.rating.reason ?? "Разбор обновлён по доступным зонам"
+        compare()
     }
 
     func stop() {
@@ -148,7 +176,8 @@ final class FaceDebugModel: ObservableObject {
                             apply(analysis); committed = frame; candidate = nil; stable = 0
                         }
                     } else if let result {
-                        status = result.faces.isEmpty ? "Лицо не найдено" : "Разбор текущего кадра готов"
+                        status = comparisonIssue ?? (result.faces.count > 1 && selected == nil
+                            ? "Выбери лицо для разбора" : "Разбор текущего кадра готов")
                     }
                     try await Task.sleep(for: pollInterval)
                 } catch is CancellationError { return }
@@ -161,23 +190,29 @@ final class FaceDebugModel: ObservableObject {
     }
 
     private func apply(_ analysis: FaceAnalysisResult) {
+        frameKey = (try? ScreenReader.fingerprint(analysis.image)).map { fingerprint in
+            let bytes = Data(fingerprint.samples.map { UInt8(($0 * 255).rounded()) })
+            return SHA256.hash(data: bytes).description
+        }
+        frameSkipped = frameKey.map { skippedFrames.contains($0) } ?? false
         result = analysis; excluded = []
         selected = analysis.faces.count == 1 ? analysis.faces.first?.id : nil
         if analysis.faces.isEmpty { status = "Лицо не найдено · числовой оценки нет" }
         else if analysis.faces.count > 1 { status = "Найдено лиц: \(analysis.faces.count) · выбери одно для разбора" }
         else { status = "Лицо найдено · разбор готов" }
+        if let comparisonIssue { status = comparisonIssue }
         compare()
     }
 
     func selectFace(_ id: Int) {
         selected = id; excluded = []
-        status = "Лицо выбрано · разбор готов"
+        status = comparisonIssue ?? "Лицо выбрано · разбор готов"
         compare()
     }
 
     func compare() {
         matchToken = UUID(); matchTask?.cancel(); match = nil; matching = false
-        guard let result, let face else { return }
+        guard comparisonIssue == nil, let result, let face else { return }
         let current = matchToken
         let references = referenceStore.references.filter { $0.kind == kind }
         matching = true
@@ -196,7 +231,7 @@ final class FaceDebugModel: ObservableObject {
     }
 
     func addReference() {
-        guard !busy, !savingReference, let result, let face else { return }
+        guard !busy, !savingReference, comparisonIssue == nil, let result, let face else { return }
         let image = result.image
         let box = face.box
         let tier = referenceTier
@@ -219,7 +254,7 @@ final class FaceDebugModel: ObservableObject {
     }
 
     func saveReport() {
-        guard let result, let face else { return }
+        guard !frameSkipped, let result, let face else { return }
         struct Report: Encodable {
             let version: String
             let method: String
@@ -284,7 +319,12 @@ struct FaceDebugView: View {
                     .background(WorkspaceStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .accessibilityLabel("Фото с разметкой лица")
-                Toggle("Показать карту лица", isOn: $model.showsLandmarks).toggleStyle(.switch)
+                HStack {
+                    Toggle("Показать карту лица", isOn: $model.showsLandmarks).toggleStyle(.switch)
+                    Spacer()
+                    Button(model.frameSkipped ? "Вернуть кадр" : "Пропустить кадр") { model.toggleFrameSkip() }
+                        .buttonStyle(WorkspaceButtonStyle())
+                }
                 if let issue = result.meshIssue { Text(issue).font(.footnote).foregroundStyle(.orange) }
                 if result.faces.count > 1 {
                     ScrollView(.horizontal) {
@@ -307,7 +347,7 @@ struct FaceDebugView: View {
                 .frame(maxWidth: .infinity).frame(height: 140)
                 .background(WorkspaceStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
             }
-            if let face = model.face {
+            if let face = model.face, !model.frameSkipped {
                 HStack {
                     Text(face.mesh == nil ? "Разметка Vision · \(face.points.count) точек" : "Карта MediaPipe · \(face.points.count) точек")
                         .foregroundStyle(.secondary)
@@ -321,7 +361,7 @@ struct FaceDebugView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let face = model.face {
+            if let face = model.face, !model.frameSkipped {
                 DisclosureGroup("Геометрия · диагностика") {
                     Text("Эти условные измерения не определяют категорию. Исключения ниже меняют только геометрический разбор.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -372,6 +412,9 @@ private struct FaceReferencePanel: View {
                 Text("Для фото пока нет твоих эталонов. Открой фото, выбери лицо и свою категорию, затем добавь эталон. Для сравнения нужны хотя бы две разные категории.")
                     .font(.system(size: 13))
             }
+            if let issue = model.comparisonIssue {
+                Text(issue).fontWeight(.medium)
+            }
             if model.matching { ProgressView("Сравниваю с эталонами…") }
             if let match = model.match {
                 if !match.nearest.isEmpty {
@@ -398,7 +441,7 @@ private struct FaceReferencePanel: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            if model.face != nil {
+            if model.face != nil, model.comparisonIssue == nil {
                 HStack {
                     Picker("Моя категория", selection: $model.referenceTier) {
                         ForEach(FaceTier.allCases) { Text($0.rawValue).tag($0) }

@@ -34,7 +34,7 @@ struct FaceRatingTests {
         check(FaceRatingEngine.evaluate(face(pitch: 30)).score != nil, "moderate pitch uses partial geometry")
         check(FaceRatingEngine.evaluate(face(yaw: nil)).score == nil, "unknown pose withheld")
         check(FaceRatingEngine.evaluate(face(width: 25)).score == nil, "small face withheld")
-        check(FaceRatingEngine.evaluate(face(quality: 0.01)).metrics.count < 4, "quality signal requests partial analysis instead of blocking all regions")
+        check(FaceRatingEngine.evaluate(face(quality: 0.01)).metrics.isEmpty, "poor capture quality suppresses measurements")
         check(FaceRatingEngine.evaluate(face(confidence: 0.1)).score == nil, "poor landmarks withheld")
         check(FaceRatingEngine.evaluate(face(quality: nil)).score != nil, "unavailable quality estimate does not invent a quality penalty")
         let shifted = FaceRatingEngine.evaluate(face(shift: 18))
@@ -62,7 +62,7 @@ struct FaceRatingTests {
         check(FaceRatingEngine.evaluate(occluded).score == nil, "no eye anchor means no invented overall rating")
         occluded.excluded = ["contour"]
         let oneMetric = FaceRatingEngine.evaluate(occluded)
-        check(oneMetric.score == nil && oneMetric.metrics.count == 1, "one available criterion is shown without overall rating")
+        check(oneMetric.score == nil && oneMetric.metrics.isEmpty, "missing contour suppresses measurements")
         check(FaceRatingEngine.evaluate(face(width: 60, height: 240, yaw: 75)).score != nil, "narrow profile box is accepted")
         var profile = face(yaw: 75); profile.roll = 0; profile.excluded = ["rightEye"]
         let profileResult = FaceRatingEngine.evaluate(profile)

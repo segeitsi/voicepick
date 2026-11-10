@@ -1,5 +1,6 @@
 """Local face geometry and a Windows-specific reference bank."""
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -20,16 +21,44 @@ def analyze(image, model):
     return image, face_mesh(image, model)
 
 
+def frame_key(image):
+    pixels = image.resize((32, 32), Image.Resampling.BILINEAR).tobytes()
+    return hashlib.sha256(pixels).hexdigest()
+
+
 def face_crop(image, report, index):
     points = np.asarray(report["faces"][index]["points"])
+    insufficient = "Недостаточно надёжных точек лица. Оценка пропущена."
+    if points.shape != (478, 2) or not np.isfinite(points).all():
+        raise ValueError(insufficient)
     x, y = points[:, 0], image.height - points[:, 1]
+    visible = (x >= 0) & (x < image.width) & (y >= 0) & (y < image.height)
+
+    def usable(indices, minimum):
+        indices = [i for i in indices if visible[i]]
+        return len(indices) >= minimum and np.linalg.norm(np.ptp(points[indices], axis=0)) >= 2
+
+    # Face Landmarker predicts a full mesh even when parts are outside the frame.
+    # Require real pixel support around an eye, nose, mouth and the lower contour.
+    eye = usable((33, 133, 159, 145), 4) or usable((263, 362, 386, 374), 4)
+    if (visible.mean() < 0.90 or not eye or not usable((1, 2, 98, 327), 2)
+            or not usable((13, 14, 61, 291), 3) or not usable((152, 148, 176, 377, 400), 4)):
+        raise ValueError(insufficient)
+    width, height = np.ptp(x), np.ptp(y)
+    if min(width, height) < 35 or max(width, height) < 90:
+        raise ValueError("Лицо слишком маленькое. Выбери фото покрупнее.")
     side = max(np.ptp(x), np.ptp(y)) * 1.24
     cx, cy = (x.min() + x.max()) / 2, (y.min() + y.max()) / 2
     rect = (max(0, int(cx - side / 2)), max(0, int(cy - side / 2)),
             min(image.width, int(cx + side / 2)), min(image.height, int(cy + side / 2)))
     if min(rect[2] - rect[0], rect[3] - rect[1]) < 35:
         raise ValueError("Лицо слишком маленькое для сравнения.")
-    return image.crop(rect)
+    crop = image.crop(rect)
+    gray = np.asarray(crop.convert("L").resize((64, 64), Image.Resampling.BILINEAR), dtype=np.float32)
+    dark, light = np.percentile(gray, (5, 95))
+    if light - dark < 24:
+        raise ValueError("Лицо видно недостаточно чётко. Оценка пропущена.")
+    return crop
 
 
 def feature(crop):

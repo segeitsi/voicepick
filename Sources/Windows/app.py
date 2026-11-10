@@ -148,6 +148,11 @@ class VoicePick:
         self.watched = None
         self.face_region = None
         self.face_result = None
+        self.face_frame_key = None
+        skipped = self.settings.get("skipped_face_frames", [])
+        if not isinstance(skipped, list):
+            skipped = []
+        self.skipped_face_frames = [key for key in skipped if isinstance(key, str) and len(key) == 64][-200:]
         self.face_images = []
         self.face_index = tk.StringVar(value="1")
         self.show_map = tk.BooleanVar(value=True)
@@ -198,6 +203,7 @@ class VoicePick:
         DATA.mkdir(parents=True, exist_ok=True)
         fields = ("kind", "like", "dislike", "enter", "minimum", "maximum", "percent", "threshold")
         data = {key: getattr(self, key).get() for key in fields}
+        data["skipped_face_frames"] = self.skipped_face_frames
         temp = SETTINGS.with_suffix(".tmp")
         temp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         temp.replace(SETTINGS)
@@ -561,8 +567,9 @@ class VoicePick:
                 elif event == "face":
                     self.face_pending = False
                     self.face_result = value
-                    self.face_index.set("1")
+                    self.face_frame_key = faces.frame_key(value[0])
                     count = len(value[1]["faces"])
+                    self.face_index.set("1" if count == 1 else "")
                     if self.watched is None or not self.watch_blocked:
                         self.status.set(f"Лиц на изображении: {count}" if count else "Лица не найдены")
                     self.update_preview()
@@ -591,6 +598,8 @@ class VoicePick:
         for title, action in (("Выделить область", lambda: self.select("face")),
                               ("Продолжить", self.start_watch), ("Остановить", self.stop)):
             button(row, title, action).pack(side="left", padx=(0, 7))
+        self.skip_face_button = button(row, "Пропустить кадр", self.toggle_face_skip)
+        self.skip_face_button.pack(side="left")
         self.preview = label(preview, "Карта лица появится после анализа", color=MUTED,
                              background=BACKGROUND, wrap=520)
         self.preview.pack(fill="x", pady=(10, 8), ipady=12)
@@ -598,8 +607,9 @@ class VoicePick:
         row.pack(fill="x")
         ttk.Checkbutton(row, text="Показать карту лица", variable=self.show_map,
                         command=self.update_preview).pack(side="left")
+        label(row, "Лицо", color=MUTED).pack(side="left", padx=(10, 0))
         self.face_selector = ttk.Combobox(row, state="readonly", width=4, textvariable=self.face_index)
-        self.face_selector.pack(side="left", padx=10)
+        self.face_selector.pack(side="left", padx=(5, 10))
         self.face_selector.bind("<<ComboboxSelected>>", lambda _: self.update_preview())
         button(row, "Сохранить разбор", self.save_report).pack(side="right")
 
@@ -695,8 +705,30 @@ class VoicePick:
         return "photo" if self.face_kind.get() == "Фотографии" else "drawing"
 
     def current_crop(self):
+        if self.face_frame_key in self.skipped_face_frames:
+            raise ValueError("Кадр пропущен.")
         image, report = self.face_result
+        if not report["faces"]:
+            raise ValueError("Лицо не найдено. Оценка пропущена.")
+        if not self.face_index.get():
+            raise ValueError("На кадре несколько лиц. Выбери нужное.")
         return faces.face_crop(image, report, int(self.face_index.get()) - 1)
+
+    def toggle_face_skip(self):
+        if self.face_frame_key is None:
+            return
+        previous = self.skipped_face_frames
+        if self.face_frame_key in previous:
+            self.skipped_face_frames = [key for key in previous if key != self.face_frame_key]
+        else:
+            self.skipped_face_frames = (previous + [self.face_frame_key])[-200:]
+        try:
+            self.save_settings()
+        except (OSError, tk.TclError) as error:
+            self.skipped_face_frames = previous
+            self.reference_status.set(str(error))
+            return
+        self.update_preview()
 
     def update_preview(self):
         self.face_images = []
@@ -708,17 +740,21 @@ class VoicePick:
         if self.bank is None:
             summary = "Не удалось открыть локальную базу эталонов."
         self.reference_status.set(summary)
+        self.skip_face_button.configure(
+            text="Вернуть кадр" if self.face_frame_key in self.skipped_face_frames else "Пропустить кадр",
+            state="normal" if self.face_result is not None else "disabled",
+        )
         if self.face_result is None:
             return
         image, report = self.face_result
         count = len(report["faces"])
-        index = min(max(int(self.face_index.get()) - 1, 0), max(0, count - 1))
+        index = int(self.face_index.get()) - 1 if self.face_index.get() else -1
         self.face_selector.configure(values=tuple(str(i + 1) for i in range(count)))
         preview = faces.draw_preview(image, report, index, self.show_map.get(), (540, 300))
         photo = ImageTk.PhotoImage(preview, master=self.root)
         self.face_images.append(photo)
         self.preview.configure(image=photo, text="")
-        if not count or self.bank is None:
+        if self.bank is None:
             return
         try:
             category, nearest, reason = self.bank.compare(self.current_crop(), self.image_kind)
@@ -815,11 +851,16 @@ class VoicePick:
             return
         try:
             report = dict(self.face_result[1])
-            if report["faces"] and self.bank is not None:
-                category, nearest, explanation = self.bank.compare(self.current_crop(), self.image_kind)
-                report["match"] = {"method": faces.METHOD, "category": category,
-                                   "nearest": [{"tier": item["tier"], "distance": value} for item, value in nearest],
-                                   "explanation": explanation}
+            if self.bank is not None:
+                try:
+                    crop = self.current_crop()
+                except ValueError as error:
+                    report["comparisonIssue"] = str(error)
+                else:
+                    category, nearest, explanation = self.bank.compare(crop, self.image_kind)
+                    report["match"] = {"method": faces.METHOD, "category": category,
+                                       "nearest": [{"tier": item["tier"], "distance": value} for item, value in nearest],
+                                       "explanation": explanation}
             Path(path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             self.status.set("Разбор сохранён")
         except (OSError, ValueError) as error:
