@@ -20,10 +20,11 @@ try {
     & $buildPython scripts/prepare-windows-models.py
     if ($LASTEXITCODE -ne 0) { throw "Could not prepare the offline models." }
     $models = (Resolve-Path "build/windows-models").Path
+    $manifest = (Resolve-Path "scripts/voicepick-windows.manifest").Path
 
     $bundle = @(
         "--noconfirm", "--onefile", "--windowed", "--noupx", "--name", "VoicePick",
-        "--manifest", "scripts/voicepick-windows.manifest",
+        "--manifest", $manifest,
         "--distpath", "build/windows-dist", "--workpath", "build/windows-pyinstaller",
         "--specpath", "build/windows-pyinstaller", "--paths", "assets/face-mesh",
         "--add-data", "${models}:models",
